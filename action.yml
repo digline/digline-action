@@ -249,11 +249,23 @@ runs:
         body="${RUNNER_TEMP:-/tmp}/digline-comment.md"
 
         # The fence is as long as it needs to be, and it is not decoration.
-        # `compare` prints the judge's own `reason`, which on an LLM-judged
-        # suite is text a *model* wrote. Three backticks in it would close a
-        # three-backtick fence and let the rest of that text render as Markdown
-        # in a comment a reviewer trusts. So: longer than the longest run of
-        # backticks in the report, which is what CommonMark's fence rule is for.
+        #
+        # `compare` prints the **configuration that differed**, by value —
+        # `resolved_model gpt-4o-mini → acme-legal-v3`, and the fingerprint
+        # beside it. Those are strings whatever server answered wrote, and for
+        # an OpenAI-compatible endpoint that server is software the customer
+        # runs and nobody here reviews: the same untrusted class the 0.8.1
+        # withholding was about. The assertion and case names come from the
+        # suite, which goes through review; these do not.
+        #
+        # Three backticks in such a value would close a three-backtick fence
+        # and let the rest render as Markdown in a comment a reviewer trusts.
+        # So: longer than the longest run of backticks in the report, which is
+        # what CommonMark's fence rule is for.
+        #
+        # (`compare` does *not* print the judge's own `reason` — its lines are
+        # case, assertion and what happened. An earlier version of this comment
+        # said it did. The rule is unchanged; only the example was wrong.)
         longest=$(grep -o '`\+' "${REPORT}" | awk '{ print length }' | sort -rn | head -n 1)
         fence=$(printf '`%.0s' $(seq $(( ${longest:-0} < 3 ? 3 : longest + 1 ))))
 

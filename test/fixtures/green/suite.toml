@@ -1,0 +1,33 @@
+# The fixture the action's own CI runs against.
+#
+# HTTP rather than a provider, so nothing here needs a key or a network: the
+# workflow compares an already-stored run (`run: false`), and a compare never
+# calls the target. `url` still has to be somewhere, because a suite that is
+# data declares its target — it is simply never reached.
+[suite]
+tenant = "acme"
+environment = "ci"
+name = "gate"
+cases = "cases.json"
+
+[target]
+type = "http"
+url = "http://127.0.0.1:8731/answer"
+output_path = "data.answer"
+cost_path = "usage.cost_usd"
+latency_from_response = "usage.elapsed_ms"
+config_path = "config"
+
+  [target.body]
+  question = "case.vars.question"
+
+# Two checks, both with a threshold that can fail, because a fixture whose
+# assertions cannot fail would prove the action green for the wrong reason.
+[[assertions]]
+type = "contains"
+needle = "Acme Support"
+
+[[assertions]]
+type = "length"
+maximum = 200
+unit = "characters"

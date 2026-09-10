@@ -1,0 +1,166 @@
+# The action, tested the only way an action can be: by running it.
+#
+# Not a lint of `action.yml` and not a unit test of the shell inside it — a real
+# `uses:` against a real fixture, through the real image, asserting the real
+# exit code. The green job proves it passes what should pass; the red job proves
+# it *fails*, which is the half that a gate quietly losing its teeth would leave
+# green.
+#
+# Nothing here needs a key or a network to a provider. The fixtures are stored
+# runs and the jobs gate with `run: false`, so no target is ever called. The
+# path that spends money — `run: true` — is deliberately not exercised here:
+# doing so would mean either a paid provider call on every push, or a container
+# network flag this action does not expose. That is stated rather than hidden.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: the image tag this action defaults to is republished on digline's
+    # releases, and a scheduled run is what notices it moving under us.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+#: The image the tests pin. Explicit rather than inherited from the action's
+#: default, so a job asserts the two agree instead of both drifting together.
+env:
+  TEST_IMAGE: ghcr.io/digline/digline:0.9.0
+
+jobs:
+  green:
+    name: A clean comparison passes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: gate
+        uses: ./
+        with:
+          suite: test/fixtures/green/suite.toml
+          root: test/fixtures/green
+          image: ${{ env.TEST_IMAGE }}
+          run: "false"
+          comment: "false"
+
+      - name: The exit code is 0, and the outputs say why
+        run: |
+          set -euo pipefail
+          echo "exit-code: ${{ steps.gate.outputs.exit-code }}"
+          echo "headline:  ${{ steps.gate.outputs.headline }}"
+          [ "${{ steps.gate.outputs.exit-code }}" = "0" ] || {
+            echo "expected exit 0 from a clean comparison"; exit 1; }
+          # Not merely zero: zero for the right reason. A fixture that stopped
+          # comparing anything would also exit 0.
+          case "${{ steps.gate.outputs.headline }}" in
+            "Nothing got worse"*) ;;
+            *) echo "the headline is not the clean one"; exit 1 ;;
+          esac
+          [ -s "${{ steps.gate.outputs.report }}" ] || {
+            echo "the report file is empty"; exit 1; }
+
+  red:
+    name: A regression fails the job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # `continue-on-error` so the job can *assert* the failure instead of
+      # dying of it. The step's `outcome` is what it really did; its
+      # `conclusion` is what continue-on-error turned that into, and asserting
+      # the first is the whole point of this job.
+      - id: gate
+        uses: ./
+        continue-on-error: true
+        with:
+          suite: test/fixtures/worse/suite.toml
+          root: test/fixtures/worse
+          image: ${{ env.TEST_IMAGE }}
+          run: "false"
+          comment: "false"
+
+      - name: The step failed, with exit 1 and a headline that names the cause
+        run: |
+          set -euo pipefail
+          echo "outcome:   ${{ steps.gate.outcome }}"
+          echo "exit-code: ${{ steps.gate.outputs.exit-code }}"
+          echo "headline:  ${{ steps.gate.outputs.headline }}"
+          [ "${{ steps.gate.outcome }}" = "failure" ] || {
+            echo "the action did not fail the step on a regression: a gate that"
+            echo "cannot fail is not a gate"; exit 1; }
+          [ "${{ steps.gate.outputs.exit-code }}" = "1" ] || {
+            echo "expected digline's exit 1, got '${{ steps.gate.outputs.exit-code }}'"
+            echo "1 is 'something got worse'; 2 would be 'could not be judged',"
+            echo "and this fixture is neither ambiguous nor unjudgeable"; exit 1; }
+          case "${{ steps.gate.outputs.headline }}" in
+            "1 check got worse"*) ;;
+            *) echo "the headline does not name the regression"; exit 1 ;;
+          esac
+
+  fence:
+    name: The comment's fence is computed, not typed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip install --quiet pyyaml
+      - run: test/fence.sh
+
+  image-tag:
+    name: The default image tag is real, and the repository agrees on it
+    # The mapping is not literal equality — this action is on its own version
+    # line (v1.x) and digline is on 0.9.x, so `v1` cannot *be* the image tag.
+    # What has to hold is the two halves of the promise the README makes: the
+    # default names an image that exists, and every place this repository
+    # quotes a tag quotes the same one. A release that bumps `action.yml` and
+    # forgets the README is exactly what this catches.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip install --quiet pyyaml
+
+      - name: action.yml, the README and the test all name one tag
+        run: |
+          set -euo pipefail
+          default=$(python3 -c "
+          import yaml
+          d = yaml.safe_load(open('action.yml'))
+          print(d['inputs']['image']['default'])
+          ")
+          echo "action.yml default: ${default}"
+          [ "${default}" = "${TEST_IMAGE}" ] || {
+            echo "the tests pin ${TEST_IMAGE} but users get ${default}:"
+            echo "CI would be proving something about an image nobody runs"
+            exit 1; }
+
+          # Every official-image reference in the README. A derived image
+          # (ghcr.io/acme/...) is the escape hatch's example and is not one.
+          quoted=$(grep -oE 'ghcr\.io/digline/digline:[0-9][^ "`]*' README.md \
+                   | sort -u)
+          echo "README quotes:"; echo "${quoted}" | sed 's/^/  /'
+          for one in ${quoted}; do
+            [ "${one}" = "${default}" ] || {
+              echo "README quotes ${one}, action.yml defaults to ${default}"
+              exit 1; }
+          done
+
+      - name: That image exists in the registry
+        run: |
+          set -euo pipefail
+          repo=${TEST_IMAGE%:*}; tag=${TEST_IMAGE##*:}
+          token=$(curl -sf "https://ghcr.io/token?scope=repository:${repo#ghcr.io/}:pull&service=ghcr.io" \
+                  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/${repo#ghcr.io/}/manifests/${tag}")
+          echo "manifest for ${TEST_IMAGE}: HTTP ${code}"
+          [ "${code}" = "200" ] || {
+            echo "the tag this action defaults to is not on the registry"; exit 1; }

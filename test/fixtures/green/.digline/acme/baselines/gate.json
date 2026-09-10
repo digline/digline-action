@@ -1,0 +1,82 @@
+{
+  "aggregate": [],
+  "artifacts": {},
+  "config_hash": "f104e032c0d0a966",
+  "created_at": "2026-09-10T15:45:42.579641+00:00",
+  "environment": "ci",
+  "git_commit": "cf9bf47dc38afadb7c5d1f8ae887a289ce994d0d-dirty",
+  "judge_config": {},
+  "metadata": {},
+  "redacted": false,
+  "results": [
+    {
+      "case_id": "where-is-my-order",
+      "suspended": false,
+      "verdicts": [
+        {
+          "assertion": "contains",
+          "assertion_id": "d697b44c72db127b",
+          "metadata": {},
+          "reason": "'Acme Support' found in the output",
+          "score": 1.0,
+          "status": "pass",
+          "threshold": 1.0,
+          "tolerance": 0.0
+        },
+        {
+          "assertion": "length",
+          "assertion_id": "79515b4664d3c45a",
+          "metadata": {
+            "length": 42,
+            "maximum": 200,
+            "unit": "characters"
+          },
+          "reason": "42 characters, within bounds (at most 200)",
+          "score": 1.0,
+          "status": "pass",
+          "threshold": 1.0,
+          "tolerance": 0.0
+        }
+      ]
+    },
+    {
+      "case_id": "how-do-i-return",
+      "suspended": false,
+      "verdicts": [
+        {
+          "assertion": "contains",
+          "assertion_id": "d697b44c72db127b",
+          "metadata": {},
+          "reason": "'Acme Support' found in the output",
+          "score": 1.0,
+          "status": "pass",
+          "threshold": 1.0,
+          "tolerance": 0.0
+        },
+        {
+          "assertion": "length",
+          "assertion_id": "79515b4664d3c45a",
+          "metadata": {
+            "length": 50,
+            "maximum": 200,
+            "unit": "characters"
+          },
+          "reason": "50 characters, within bounds (at most 200)",
+          "score": 1.0,
+          "status": "pass",
+          "threshold": 1.0,
+          "tolerance": 0.0
+        }
+      ]
+    }
+  ],
+  "schema_version": 9,
+  "suite": "gate",
+  "target_config": {
+    "values": {
+      "model": "gpt-4o-mini",
+      "provider": "openai"
+    }
+  },
+  "tenant": "acme"
+}
