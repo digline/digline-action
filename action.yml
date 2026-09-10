@@ -130,6 +130,17 @@ runs:
         INPUT_RUN: ${{ inputs.run }}
         INPUT_FORWARD_ENV: ${{ inputs.forward-env }}
       run: |
+        # `set +e` FIRST, and it is load-bearing.
+        #
+        # GitHub runs `shell: bash` as `bash -e {0}`, so errexit is already on
+        # when this script starts — `set -uo pipefail` below does not clear it.
+        # The entire job of this step is to CAPTURE a non-zero exit from
+        # `compare` rather than die of it, and with errexit on it died at the
+        # pipeline: no outputs, no environment, no annotation, and **no
+        # comment** — the feature this action exists for, absent on exactly the
+        # runs it exists for. Found by the red fixture, which is what a red
+        # fixture is for.
+        set +e
         set -uo pipefail
 
         # --user, and it is the whole reason this is a shell step you can read.
@@ -161,8 +172,8 @@ runs:
         done
 
         perimeter=(--root "${INPUT_ROOT}")
-        [ -n "${INPUT_TENANT}" ] && perimeter+=(--tenant "${INPUT_TENANT}")
-        [ -n "${INPUT_ENV}" ] && perimeter+=(--env "${INPUT_ENV}")
+        if [ -n "${INPUT_TENANT}" ]; then perimeter+=(--tenant "${INPUT_TENANT}"); fi
+        if [ -n "${INPUT_ENV}" ]; then perimeter+=(--env "${INPUT_ENV}"); fi
 
         digline() {
           docker run "${docker_args[@]}" "${INPUT_IMAGE}" "$@"
@@ -239,6 +250,11 @@ runs:
           2) echo "::error title=digline: the run could not be judged::$(head -n 1 "${report}")" ;;
           *) echo "::error title=digline refused the request::exit ${status}, which is not a verdict on the suite" ;;
         esac
+
+        # This step *reports* the verdict; the `verdict` step at the end of the
+        # action is what carries it. Exiting 0 here deliberately, rather than
+        # on whatever the last construct happened to return.
+        exit 0
 
     # Always, so that the comment happens on the exit codes it exists for: 1 and
     # 2 are the two the step above marks as errors, and a comment posted only on
@@ -319,16 +335,31 @@ runs:
         # `--jq` runs once per page under `--paginate`, so a filter ending in
         # `last` would print one id per page rather than one overall. The
         # selection streams and `tail` picks the newest across every page.
-        existing=$(gh api "repos/${GH_REPO}/issues/${PR}/comments" --paginate \
-          --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
-          | tail -n 1)
-        if [ -n "${existing}" ]; then
-          gh api --method PATCH "repos/${GH_REPO}/issues/comments/${existing}" \
-            -F body=@"${body}" --silent
-          echo "updated comment ${existing}"
-        else
-          gh pr comment "${PR}" --body-file "${body}"
+        # A comment that cannot be posted must not become the job's verdict.
+        # The commonest cause is a workflow without `pull-requests: write`, and
+        # turning that into a failed gate would report "something got worse"
+        # about a run that may well have been green. It warns, and the exit
+        # code below is still digline's.
+        set +e
+        post() {
+          existing=$(gh api "repos/${GH_REPO}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+            | tail -n 1) || return 1
+          if [ -n "${existing}" ]; then
+            gh api --method PATCH "repos/${GH_REPO}/issues/comments/${existing}" \
+              -F body=@"${body}" --silent || return 1
+            echo "updated comment ${existing}"
+          else
+            gh pr comment "${PR}" --body-file "${body}" || return 1
+          fi
+        }
+        if ! post; then
+          note="the comparison could not be posted. The commonest cause is a"
+          note="${note} workflow without \`permissions: pull-requests: write\`."
+          note="${note} The verdict is unaffected and is in the log above."
+          echo "::warning title=digline: the comment was not posted::${note}"
         fi
+        exit 0
 
     # The gate itself, last, so the comment is posted before the job fails.
     # The exit code is digline's, unchanged: it is the contract, and an action
