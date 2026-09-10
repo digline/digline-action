@@ -96,15 +96,12 @@ inputs:
     required: false
     default: ${{ github.token }}
 
-# NOTE: GitHub does not export a composite action's outputs when the action
-# fails, and this action fails on a regression and on an unjudged run — so
-# these are readable on the green path only. The same four facts are also
-# written to the job's environment as DIGLINE_EXIT_CODE, DIGLINE_HEADLINE,
-# DIGLINE_RUN_KEY and DIGLINE_REPORT, which survive a failing gate. README.md
-# has the pattern.
+# These survive the action failing, which is the case that matters: the gate
+# step records the verdict and exits 0, and the `verdict` step at the end is
+# what carries it. The action's own CI asserts this on a red fixture.
 outputs:
   exit-code:
-    description: "0 fine, 1 something got worse, 2 the run could not be judged (green path only — see note above)"
+    description: "0 fine, 1 something got worse, 2 the run could not be judged"
     value: ${{ steps.gate.outputs.exit-code }}
   headline:
     description: "the one-sentence verdict, the same sentence the report shows"
@@ -223,26 +220,6 @@ runs:
           echo "DIGLINE_HEADLINE"
         } >> "${GITHUB_OUTPUT}"
 
-        # …and the same facts into the job's environment, which is not
-        # belt-and-braces: **GitHub does not export a composite action's
-        # `outputs` when the action fails**, and this action fails on exactly
-        # the runs worth reading — a regression and an unjudged run. So
-        # `steps.<id>.outputs.exit-code` is empty precisely when somebody wants
-        # it, which was found by running this action against a red fixture and
-        # watching the assertion come back with an empty string.
-        #
-        # Variables written to $GITHUB_ENV survive, because they belong to the
-        # job rather than to the action. A caller reads them from any later
-        # step with `if: always()`. The outputs stay for the green path, where
-        # they work and read better.
-        {
-          echo "DIGLINE_EXIT_CODE=${status}"
-          echo "DIGLINE_RUN_KEY=${key}"
-          echo "DIGLINE_REPORT=${report}"
-          echo "DIGLINE_HEADLINE<<DIGLINE_HEADLINE_EOF"
-          head -n 1 "${report}"
-          echo "DIGLINE_HEADLINE_EOF"
-        } >> "${GITHUB_ENV}"
 
         case "${status}" in
           0) echo "::notice title=digline::$(head -n 1 "${report}")" ;;

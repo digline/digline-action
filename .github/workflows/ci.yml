@@ -66,9 +66,6 @@ jobs:
           esac
           [ -s "${{ steps.gate.outputs.report }}" ] || {
             echo "the report file is empty"; exit 1; }
-          # On the green path both routes work, and they have to agree.
-          [ "${DIGLINE_EXIT_CODE:-}" = "${{ steps.gate.outputs.exit-code }}" ] || {
-            echo "the environment and the outputs disagree"; exit 1; }
 
   red:
     name: A regression fails the job
@@ -90,43 +87,35 @@ jobs:
           run: "false"
           comment: "false"
 
-      # The facts are read from the **environment**, not from the step's
-      # outputs. GitHub does not export a composite action's outputs when the
-      # action fails, and this action fails here by design — so on a red run
-      # `steps.gate.outputs.exit-code` is the empty string. That is not a
-      # quirk worth working around silently: it is the case a user most wants
-      # to read, so the action writes the same four facts to $GITHUB_ENV,
-      # which belongs to the job and survives. This job asserts both halves.
+      # The outputs are asserted on a **failing** action, which is the case
+      # worth pinning: the gate step records the verdict and exits 0, and the
+      # `verdict` step at the end is what fails the job. Get that order wrong —
+      # as an earlier version did, by dying inside the gate step on an inherited
+      # `errexit` — and everything after it is lost: outputs, annotation, and
+      # the pull request comment this action exists to post.
       - name: The step failed, with exit 1 and a headline that names the cause
         if: always()
         run: |
           set -euo pipefail
-          echo "outcome:            ${{ steps.gate.outcome }}"
-          echo "outputs.exit-code:  '${{ steps.gate.outputs.exit-code }}'"
-          echo "DIGLINE_EXIT_CODE:  '${DIGLINE_EXIT_CODE:-}'"
-          echo "DIGLINE_HEADLINE:   ${DIGLINE_HEADLINE:-}"
+          echo "outcome:   ${{ steps.gate.outcome }}"
+          echo "exit-code: '${{ steps.gate.outputs.exit-code }}'"
+          echo "headline:  ${{ steps.gate.outputs.headline }}"
 
           [ "${{ steps.gate.outcome }}" = "failure" ] || {
             echo "the action did not fail the step on a regression: a gate that"
             echo "cannot fail is not a gate"; exit 1; }
 
-          [ "${DIGLINE_EXIT_CODE:-}" = "1" ] || {
-            echo "expected digline's exit 1, got '${DIGLINE_EXIT_CODE:-}'"
-            echo "1 is 'something got worse'; 2 would be 'could not be judged',"
-            echo "and this fixture is neither ambiguous nor unjudgeable"; exit 1; }
+          [ "${{ steps.gate.outputs.exit-code }}" = "1" ] || {
+            echo "expected digline's exit 1, got '${{ steps.gate.outputs.exit-code }}'"
+            echo "An empty string here means the action died before recording"
+            echo "anything — which is what an inherited errexit did once, taking"
+            echo "the comment with it. 1 is 'something got worse'; 2 would be"
+            echo "'could not be judged', and this fixture is neither."; exit 1; }
 
-          case "${DIGLINE_HEADLINE:-}" in
+          case "${{ steps.gate.outputs.headline }}" in
             "1 check got worse"*) ;;
             *) echo "the headline does not name the regression"; exit 1 ;;
           esac
-
-          # The documented limitation, asserted rather than described: if this
-          # ever starts being populated, the README's caveat has gone stale and
-          # should be removed.
-          [ -z "${{ steps.gate.outputs.exit-code }}" ] || {
-            echo "NOTE: outputs now survive a failing composite action."
-            echo "GitHub's behaviour changed; drop the caveat from README.md"
-            echo "and simplify this job."; exit 1; }
 
   fence:
     name: The comment's fence is computed, not typed
