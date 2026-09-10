@@ -57,8 +57,34 @@ renderings of one comparison drift apart the day either of them moves.
 | `64` | digline refused the request you made. Not a verdict on the suite |
 
 The action does not translate these into a pass or a fail of its own: it exits
-with digline's code, so `steps.<id>.outputs.exit-code` tells `1` from `2` and a
-later step can act on the difference.
+with digline's code, so a later step can tell `1` from `2` and act on the
+difference.
+
+**Read it from the environment, not from the outputs, when the gate is red.**
+GitHub does not export a composite action's `outputs` when the action fails —
+and this action fails on exactly the runs worth reading. So the same four facts
+are also written to the job's environment, where they survive:
+
+```yaml
+      - uses: digline/digline-action@v1
+        id: gate
+        continue-on-error: true          # so the job can decide for itself
+        with:
+          suite: eval/suite.py
+
+      - if: always()
+        run: |
+          echo "$DIGLINE_HEADLINE"
+          case "$DIGLINE_EXIT_CODE" in
+            0) echo "proceed" ;;
+            1) echo "something got worse"; exit 1 ;;
+            2) echo "could not be judged — nothing downstream is meaningful"; exit 1 ;;
+          esac
+```
+
+`DIGLINE_EXIT_CODE`, `DIGLINE_HEADLINE`, `DIGLINE_RUN_KEY` and `DIGLINE_REPORT`.
+Without `continue-on-error` the job stops at the action, which is the right
+default and needs none of this.
 
 ## Inputs
 
@@ -77,7 +103,9 @@ later step can act on the difference.
 
 Outputs: `exit-code`, `headline` (the one-sentence verdict), `run-key`, and
 `report` (the path to the compare output, verbatim, if you want to attach it as
-an artifact).
+an artifact) — **on the green path**. On a red one read the environment
+variables above; the action's own CI asserts both routes, and asserts that the
+outputs are still empty on a failure, so this caveat cannot go stale unnoticed.
 
 `suite`, `root`, `tenant` and `env` are the CLI's own flag names and mean exactly
 what they mean there.
