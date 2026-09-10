@@ -117,6 +117,36 @@ jobs:
             *) echo "the headline does not name the regression"; exit 1 ;;
           esac
 
+  published:
+    name: The README's own line works — digline/digline-action@v1
+    # Every other job uses `./`, which tests the working tree. This one uses
+    # the **published tag**, which is what the README tells a reader to write:
+    # `uses: digline/digline-action@v1`. It is the only job that can catch a
+    # `v1` that was never moved, or a release that left the floating tag
+    # pointing at a commit where the action did not work.
+    #
+    # It runs against the fixture in *this* checkout, so it exercises the
+    # tagged action over the current fixtures — the combination a user is in
+    # the moment they upgrade digline but not the action.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: gate
+        uses: digline/digline-action@v1
+        with:
+          suite: test/fixtures/green/suite.toml
+          root: test/fixtures/green
+          image: ${{ env.TEST_IMAGE }}
+          run: "false"
+          comment: "false"
+
+      - run: |
+          set -euo pipefail
+          [ "${{ steps.gate.outputs.exit-code }}" = "0" ] || {
+            echo "the published @v1 did not pass a clean comparison"; exit 1; }
+          echo "digline/digline-action@v1 resolves and gates: ${{ steps.gate.outputs.headline }}"
+
   fence:
     name: The comment's fence is computed, not typed
     runs-on: ubuntu-latest
