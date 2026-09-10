@@ -72,9 +72,17 @@ its own CI asserts this against a red fixture:
           suite: eval/suite.py
 
       - if: always()
+        env:
+          # Through `env:`, never interpolated into the script body. The
+          # headline is digline's own fixed vocabulary and counts, so nothing
+          # here is injectable today — but this is the line people copy for
+          # other values, and `${{ }}` inside a `run:` is how a workflow gets
+          # a shell injection.
+          HEADLINE: ${{ steps.gate.outputs.headline }}
+          CODE: ${{ steps.gate.outputs.exit-code }}
         run: |
-          echo "${{ steps.gate.outputs.headline }}"
-          case "${{ steps.gate.outputs.exit-code }}" in
+          echo "$HEADLINE"
+          case "$CODE" in
             0) echo "proceed" ;;
             1) echo "something got worse"; exit 1 ;;
             2) echo "could not be judged — nothing downstream is meaningful"; exit 1 ;;
@@ -206,6 +214,51 @@ configured and to nothing else. Everything it writes lands in `.digline/` inside
 your checkout, owned by the user who owns that checkout — the action passes
 `--user "$(id -u):$(id -g)"` for exactly that, and warns you in the log if the
 files come back owned by somebody else.
+
+## The trust model, and the one way to get it badly wrong
+
+**This action runs code from the checkout.** `digline compare` loads your
+suite, and a `suite.py` is Python: it imports your application and runs at
+collection. That is the design — a suite is code and says so — and it decides
+how this action may be triggered.
+
+**Use `pull_request`.** A pull request from a fork then runs with a read-only
+`GITHUB_TOKEN` and **no access to your secrets**, which is what makes it safe to
+execute a contributor's suite at all. The comment step simply does not post on
+such a run, and that is correct rather than a limitation.
+
+> **Never `pull_request_target` with a checkout of the pull request's head.**
+> That combination gives a fork's code your secrets — your provider API keys —
+> and this action would be the thing that runs it. It is the classic
+> "pwn request", and an evaluation gate is an unusually attractive place for
+> it because the secrets in reach are exactly the ones worth stealing.
+>
+> ```yaml
+> # DO NOT DO THIS
+> on: pull_request_target
+> jobs:
+>   gate:
+>     steps:
+>       - uses: actions/checkout@v5
+>         with:
+>           ref: ${{ github.event.pull_request.head.sha }}   # fork's code…
+>       - uses: digline/digline-action@v1                    # …with your keys
+> ```
+
+**A fork can edit the workflow.** Under `pull_request`, the workflow that runs
+is the one on the fork's branch, so a contributor can point `image:` at any
+registry they like. What that image gets is the public checkout, a read-only
+token and no secrets — the ordinary fork-PR bargain, unchanged by this action.
+If that is not a bargain you want, gate the job on a label or require approval
+for first-time contributors; GitHub's "Require approval for all external
+contributors" setting is the blunt version.
+
+**The inputs are yours, not a contributor's.** `suite`, `root`, `tenant`, `env`
+and `image` reach the container as argv, each as exactly one element — an
+adversarial pass fed them spaces, quotes, `$()`, backticks, `;` and appended
+`--privileged`, and every one arrived as a single inert string. But they come
+from your workflow file, and a workflow file that a fork can edit is a workflow
+file a fork controls; the paragraph above is the part that matters.
 
 ## Requirements
 

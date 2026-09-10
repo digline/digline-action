@@ -265,7 +265,17 @@ runs:
         # line per regression — composed by `digline.report`, in the wording the
         # HTML report uses. Re-rendering it into a table here would be a second
         # rendering of one truth, drifting from the first the day either moves.
-        marker="<!-- digline-action:${SUITE} -->"
+        # The suite name is reduced to a safe alphabet before it goes anywhere
+        # near a jq program or an HTML comment. Two things it stops, both found
+        # by an adversarial pass: a `"` in the path breaks out of the jq string
+        # literal below — at best losing the comment, at worst selecting a
+        # different comment id and editing somebody else's comment — and a
+        # `-->` in it closes this HTML comment early, so the marker becomes
+        # visible text and stops matching. The value is workflow-author
+        # controlled rather than attacker controlled, which is why this is a
+        # robustness fix and not an advisory; it is one line either way.
+        key=$(printf '%s' "${SUITE}" | tr -c 'A-Za-z0-9._/-' '-')
+        marker="<!-- digline-action:${key} -->"
         body="${RUNNER_TEMP:-/tmp}/digline-comment.md"
 
         # The fence is as long as it needs to be, and it is not decoration.

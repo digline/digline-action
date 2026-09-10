@@ -64,3 +64,29 @@ echo "fence the comment used:             ${#fence}"
   echo "FAIL: the body does not have exactly two fence lines"; exit 1; }
 
 echo "OK: the fence is computed, not typed."
+
+# --------------------------------------------------------------------------- #
+# The marker is reduced to a safe alphabet before it reaches a jq program.
+# --------------------------------------------------------------------------- #
+# A `"` in the suite path used to break out of the jq string literal that finds
+# the previous comment — losing the comment at best, and selecting a different
+# comment id at worst. A `-->` closed the HTML comment early. Both are
+# workflow-author values rather than attacker values, and both are one `tr`
+# away from impossible.
+rm -f "$work/body.md"
+PATH="$work/bin:$PATH" RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 SUITE='a".toml-->x' REPORT="$work/report.txt" STATUS=1   bash "$work/comment.sh" > /dev/null
+
+marker=$(head -n 1 "$work/body.md")
+echo "marker from a hostile suite name: ${marker}"
+case "${marker}" in
+  *'"'*) echo "FAIL: a quote survived into the marker, and so into the jq"; exit 1 ;;
+esac
+# Exactly one `-->`, at the end: the comment closes where it should.
+[ "$(grep -c -- '-->' <<<"${marker}")" = "1" ] || {
+  echo "FAIL: the marker does not close as a single HTML comment"; exit 1; }
+case "${marker}" in
+  '<!-- digline-action:'*' -->') ;;
+  *) echo "FAIL: the marker lost its shape"; exit 1 ;;
+esac
+
+echo "OK: the marker cannot carry a quote or close itself early."
