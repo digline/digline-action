@@ -1,0 +1,307 @@
+# The digline gate, as a GitHub Action.
+#
+# Composite rather than a docker action, and the reason is the image's own
+# promise. `ghcr.io/digline/digline` contains the CLI and the three provider
+# plugins and *nothing else* — no dynamic installs, ever — but `digline compare`
+# **loads the suite**, and a `suite.py` imports the application under test. So a
+# docker action, whose `runs.image` is a static string that cannot be an input,
+# would hard-code that ceiling: it would gate a `suite.toml` and a suite that
+# imports nothing but digline, and refuse everybody else.
+#
+# A composite step takes `image` as an input, so a repository whose suite has
+# dependencies of its own derives the image — `FROM ghcr.io/digline/digline` plus
+# its own installs — and points this at it. It also has more than one step, which
+# is what lets the pull request comment live here instead of in every caller's
+# workflow, and it puts `--user` and the ownership check in a shell block a
+# reader can see rather than inside a container contract.
+name: digline
+description: >-
+  Hold this branch's LLM output against the baseline committed in your
+  repository, and comment the comparison on the pull request.
+author: Alessandro Prandini
+
+branding:
+  icon: activity
+  color: purple
+
+inputs:
+  # The four that mirror the CLI, by its own names. `--suite`, `--root`,
+  # `--tenant` and `--env` mean here exactly what they mean there — the last two
+  # verify what the suite declares and never override it, which is how a run
+  # avoids being filed under the wrong customer.
+  suite:
+    description: "path/to/suite.py[:attribute] or path/to/suite.toml, from the repository root"
+    required: true
+  root:
+    description: "directory holding .digline/ (the CLI's --root)"
+    required: false
+    default: "."
+  tenant:
+    description: "verify the suite's tenant; never overrides"
+    required: false
+    default: ""
+  env:
+    description: "verify the suite's environment; never overrides"
+    required: false
+    default: ""
+
+  image:
+    description: >-
+      The image to run. The default tracks this action's own version, so
+      digline/digline-action@v1 and the image it runs are released together.
+      Point it at your own derivation — FROM ghcr.io/digline/digline:<version>
+      plus your suite's dependencies — when your suite.py imports an
+      application.
+    required: false
+    default: "ghcr.io/digline/digline:0.9.0"
+
+  run:
+    description: >-
+      Produce a run before comparing. THIS CALLS YOUR PROVIDER AND SPENDS MONEY.
+      Set to false when an earlier step already ran the suite, and this compares
+      the latest stored run instead.
+    required: false
+    default: "true"
+
+  comment:
+    description: "post the comparison on the pull request (needs pull-requests: write)"
+    required: false
+    default: "true"
+  comment-on-success:
+    description: >-
+      Comment when nothing got worse, too. Off by default: a comment on every
+      green pull request is what teaches a reviewer to scroll past digline's
+      comments, and the green check already carries that news. A regression and
+      an unjudged run always comment, whatever this says.
+    required: false
+    default: "false"
+
+  forward-env:
+    description: >-
+      Environment variables to pass into the container, by name, when they are
+      set on this step. The default covers the three first-party plugins; add
+      yours here rather than baking a key into an image.
+    required: false
+    default: >-
+      ANTHROPIC_API_KEY
+      OPENAI_API_KEY
+      OPENAI_BASE_URL
+      AWS_ACCESS_KEY_ID
+      AWS_SECRET_ACCESS_KEY
+      AWS_SESSION_TOKEN
+      AWS_REGION
+      AWS_DEFAULT_REGION
+  github-token:
+    description: "token used to post the comment"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: "0 fine, 1 something got worse, 2 the run could not be judged"
+    value: ${{ steps.gate.outputs.exit-code }}
+  headline:
+    description: "the one-sentence verdict, the same sentence the report shows"
+    value: ${{ steps.gate.outputs.headline }}
+  run-key:
+    description: "the key of the run that was compared"
+    value: ${{ steps.gate.outputs.run-key }}
+  report:
+    description: "path to the file holding the compare output, verbatim"
+    value: ${{ steps.gate.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        INPUT_SUITE: ${{ inputs.suite }}
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_TENANT: ${{ inputs.tenant }}
+        INPUT_ENV: ${{ inputs.env }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_RUN: ${{ inputs.run }}
+        INPUT_FORWARD_ENV: ${{ inputs.forward-env }}
+      run: |
+        set -uo pipefail
+
+        # --user, and it is the whole reason this is a shell step you can read.
+        #
+        # The image runs as its own uid 1000; the checkout belongs to the runner,
+        # which is 1001 on GitHub-hosted machines. Without this every file the
+        # run writes into .digline/ arrives owned by somebody the later steps of
+        # the workflow are not — an artifact upload, a `git status`, a cache
+        # save, all failing for a reason that names nothing.
+        #
+        # HOME because a uid with no passwd entry inside the container has no
+        # home directory, and something reaching for one would find nothing.
+        # Nothing digline does needs it; being explicit costs one flag.
+        docker_args=(
+          --rm
+          --user "$(id -u):$(id -g)"
+          --env HOME=/tmp
+          --volume "${GITHUB_WORKSPACE}:/work"
+          --workdir /work
+        )
+        # Only names that are actually set, and only names — `--env NAME` passes
+        # the value through from this step's environment, so no secret is ever
+        # written into a command line where `set -x` or a log could show it.
+        for name in ${INPUT_FORWARD_ENV}; do
+          if [ -n "${!name-}" ]; then
+            docker_args+=(--env "${name}")
+            echo "forwarding ${name}"
+          fi
+        done
+
+        perimeter=(--root "${INPUT_ROOT}")
+        [ -n "${INPUT_TENANT}" ] && perimeter+=(--tenant "${INPUT_TENANT}")
+        [ -n "${INPUT_ENV}" ] && perimeter+=(--env "${INPUT_ENV}")
+
+        digline() {
+          docker run "${docker_args[@]}" "${INPUT_IMAGE}" "$@"
+        }
+
+        key=latest
+        if [ "${INPUT_RUN}" = "true" ]; then
+          # The planned call count goes to stderr and lands in the log before
+          # the first call, which is where somebody paying for it can see it.
+          # stdout is the key alone, which is why it can be captured like this.
+          if ! key=$(digline run --suite "${INPUT_SUITE}" "${perimeter[@]}"); then
+            note="the suite could not be run; the log above is the reason"
+            echo "::error title=digline run failed::${note}"
+            exit 1
+          fi
+          echo "ran ${INPUT_SUITE}: ${key}"
+        fi
+
+        report="${RUNNER_TEMP:-/tmp}/digline-compare.txt"
+        # stdout alone. `latest` can put a note on stderr, and merging the two
+        # would put it in the report at a position nothing guarantees — while
+        # the first line of the report is what becomes the `headline` output.
+        # The note still reaches the job log, which is where it is actionable.
+        digline compare --suite "${INPUT_SUITE}" --run "${key}" \
+          "${perimeter[@]}" | tee "${report}"
+        status=${PIPESTATUS[0]}
+
+        # The .digline/ the run just wrote belongs to whoever owns the checkout.
+        # A warning and not a failure: it says the --user above did not take,
+        # which will break a later step of the caller's workflow — but it says
+        # nothing about the comparison, and the comparison is what this action
+        # is for.
+        stored="${GITHUB_WORKSPACE}/${INPUT_ROOT}/.digline"
+        if [ -d "${stored}" ] &&
+           find "${stored}" ! -user "$(id -u)" -print -quit | grep -q .; then
+          note="${stored} holds files owned by another user, so later steps"
+          note="${note} that touch it may fail. This means --user did not take."
+          echo "::warning title=digline wrote files you do not own::${note}"
+        fi
+
+        {
+          echo "exit-code=${status}"
+          echo "run-key=${key}"
+          echo "report=${report}"
+          echo "headline<<DIGLINE_HEADLINE"
+          head -n 1 "${report}"
+          echo "DIGLINE_HEADLINE"
+        } >> "${GITHUB_OUTPUT}"
+
+        case "${status}" in
+          0) echo "::notice title=digline::$(head -n 1 "${report}")" ;;
+          1) echo "::error title=digline: something got worse::$(head -n 1 "${report}")" ;;
+          2) echo "::error title=digline: the run could not be judged::$(head -n 1 "${report}")" ;;
+          *) echo "::error title=digline refused the request::exit ${status}, which is not a verdict on the suite" ;;
+        esac
+
+    # Always, so that the comment happens on the exit codes it exists for: 1 and
+    # 2 are the two the step above marks as errors, and a comment posted only on
+    # success would be a comment posted only when nobody needs it.
+    - id: comment
+      if: >-
+        always()
+        && inputs.comment == 'true'
+        && github.event.pull_request.number
+        && (steps.gate.outputs.exit-code != '0' || inputs.comment-on-success == 'true')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        SUITE: ${{ inputs.suite }}
+        REPORT: ${{ steps.gate.outputs.report }}
+        STATUS: ${{ steps.gate.outputs.exit-code }}
+      run: |
+        set -euo pipefail
+
+        case "${STATUS}" in
+          0) verdict="Nothing got worse." ;;
+          1) verdict="**Something got worse.**" ;;
+          2) verdict="**The run could not be judged**, so nothing downstream of it is meaningful." ;;
+          *) verdict="digline refused the request (exit ${STATUS}). This is not a verdict on the suite." ;;
+        esac
+
+        # The comparison goes in verbatim, in a fence. It already carries the
+        # headline, the files that moved, the configuration that differed and a
+        # line per regression — composed by `digline.report`, in the wording the
+        # HTML report uses. Re-rendering it into a table here would be a second
+        # rendering of one truth, drifting from the first the day either moves.
+        marker="<!-- digline-action:${SUITE} -->"
+        body="${RUNNER_TEMP:-/tmp}/digline-comment.md"
+
+        # The fence is as long as it needs to be, and it is not decoration.
+        # `compare` prints the judge's own `reason`, which on an LLM-judged
+        # suite is text a *model* wrote. Three backticks in it would close a
+        # three-backtick fence and let the rest of that text render as Markdown
+        # in a comment a reviewer trusts. So: longer than the longest run of
+        # backticks in the report, which is what CommonMark's fence rule is for.
+        longest=$(grep -o '`\+' "${REPORT}" | awk '{ print length }' | sort -rn | head -n 1)
+        fence=$(printf '`%.0s' $(seq $(( ${longest:-0} < 3 ? 3 : longest + 1 ))))
+
+        {
+          echo "${marker}"
+          echo "### digline — \`${SUITE}\`"
+          echo
+          echo "${verdict}"
+          echo
+          echo "${fence}"
+          cat "${REPORT}"
+          echo "${fence}"
+          echo
+          echo "<sub>Exit code \`${STATUS}\`: \`0\` fine, \`1\` something got"
+          echo "worse, \`2\` could not be judged. The baseline is the one"
+          echo "committed in this repository; promoting a new one is a person's"
+          echo "command, never this action's.</sub>"
+        } > "${body}"
+
+        # Edited in place rather than appended to, so a branch pushed eleven
+        # times carries one comment saying what is true now instead of eleven
+        # saying what was true once. Keyed on the marker, which carries the
+        # suite: two suites in one workflow keep two comments.
+        # `--jq` runs once per page under `--paginate`, so a filter ending in
+        # `last` would print one id per page rather than one overall. The
+        # selection streams and `tail` picks the newest across every page.
+        existing=$(gh api "repos/${GH_REPO}/issues/${PR}/comments" --paginate \
+          --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" \
+          | tail -n 1)
+        if [ -n "${existing}" ]; then
+          gh api --method PATCH "repos/${GH_REPO}/issues/comments/${existing}" \
+            -F body=@"${body}" --silent
+          echo "updated comment ${existing}"
+        else
+          gh pr comment "${PR}" --body-file "${body}"
+        fi
+
+    # The gate itself, last, so the comment is posted before the job fails.
+    # The exit code is digline's, unchanged: it is the contract, and an action
+    # that translated it into a pass/fail of its own would be throwing away the
+    # difference between "this got worse" and "this could not be judged".
+    - id: verdict
+      if: always()
+      shell: bash
+      env:
+        # Defaulted rather than interpolated bare: if the step above died before
+        # it could write its outputs, this is empty, and a bare `exit` would
+        # return 0 — reporting a green gate for a job that never judged
+        # anything. Which is the vacuously green assertion, at the last step.
+        STATUS: ${{ steps.gate.outputs.exit-code }}
+      run: exit "${STATUS:-1}"
