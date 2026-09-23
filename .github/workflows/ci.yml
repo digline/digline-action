@@ -33,7 +33,7 @@ concurrency:
 #: The image the tests pin. Explicit rather than inherited from the action's
 #: default, so a job asserts the two agree instead of both drifting together.
 env:
-  TEST_IMAGE: ghcr.io/digline/digline:0.9.0
+  TEST_IMAGE: ghcr.io/digline/digline:0.19.0
 
 jobs:
   green:
@@ -156,13 +156,23 @@ jobs:
       - run: test/fence.sh
 
   image-tag:
-    name: The default image tag is real, and the repository agrees on it
-    # The mapping is not literal equality — this action is on its own version
-    # line (v1.x) and digline is on 0.9.x, so `v1` cannot *be* the image tag.
-    # What has to hold is the two halves of the promise the README makes: the
-    # default names an image that exists, and every place this repository
-    # quotes a tag quotes the same one. A release that bumps `action.yml` and
-    # forgets the README is exactly what this catches.
+    name: The default image tag is real, current, and agreed on
+    # This action is on its own version line (v1.x) and digline is not, so `v1`
+    # cannot *be* the image tag and the default has to say which digline it
+    # means. Four things have to hold, and the fourth is the one that was
+    # missing until 2026-09-23.
+    #
+    # The first three — default == TEST_IMAGE, every README tag == default, and
+    # the tag resolves on ghcr — all compare the default against things derived
+    # from the default. They are self-consistent by construction, so they went
+    # green for ten minors while the default sat at 0.9.0 and digline shipped
+    # 0.19.0. A check that cannot fail is not a check, and this surface went
+    # unlooked-at *because* it was green.
+    #
+    # The weekly cron below was added to notice "the image tag moving under
+    # us". A pinned tag does not move: `0.9.0` still resolves today. What moved
+    # was the release the default should have been naming, which nothing asked
+    # about. The fourth step is what the cron is actually for.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -206,3 +216,28 @@ jobs:
           echo "manifest for ${TEST_IMAGE}: HTTP ${code}"
           [ "${code}" = "200" ] || {
             echo "the tag this action defaults to is not on the registry"; exit 1; }
+
+      - name: And it names the digline that is current
+        # The only step here that compares the default against something
+        # *outside* this repository, which is why it is the only one that can
+        # tell us we have drifted. PyPI's JSON API, because `info.version` is
+        # the release digline itself considers current; the project page is
+        # not usable for this — /project/<anything>/ answers 200.
+        run: |
+          set -euo pipefail
+          tag=${TEST_IMAGE##*:}
+          latest=$(curl -sfL https://pypi.org/pypi/digline/json \
+                   | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])")
+          echo "default names digline ${tag}; newest on PyPI is ${latest}"
+          [ "${tag}" = "${latest}" ] || {
+            echo
+            echo "the default image does not name the current digline."
+            echo "Bump all four together and they stay in step:"
+            echo "  - action.yml   inputs.image.default"
+            echo "  - ci.yml       env.TEST_IMAGE"
+            echo "  - README.md    every ghcr.io/digline/digline:<version>"
+            echo "  - README.md    the derived-image example"
+            echo
+            echo "If digline ${latest} has only just shipped, its image may not"
+            echo "be on ghcr yet — the step above is what says so."
+            exit 1; }
