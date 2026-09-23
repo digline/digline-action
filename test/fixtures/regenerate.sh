@@ -13,7 +13,11 @@ cd "$(dirname "$0")"
 digline=${1:-digline}
 
 stub() {
-  (cd "$1" && ${WORSE:+WORSE=1} python3 stub.py &)
+  # `env`, because `${WORSE:+WORSE=1} python3` does not work: assignment
+  # prefixes are recognised when the line is parsed, before the expansion
+  # produces one, so bash looks for a command literally named `WORSE=1`.
+  # Only the `worse` half went through this branch, so it stayed latent.
+  (cd "$1" && env ${WORSE:+WORSE=1} python3 stub.py &)
   for _ in $(seq 1 20); do
     curl -sf -o /dev/null --head http://127.0.0.1:8731/answer && return 0
     sleep 0.5

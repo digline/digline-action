@@ -47,13 +47,15 @@ inputs:
 
   image:
     description: >-
-      The image to run. The default tracks this action's own version, so
-      digline/digline-action@v1 and the image it runs are released together.
-      Point it at your own derivation — FROM ghcr.io/digline/digline:<version>
-      plus your suite's dependencies — when your suite.py imports an
-      application.
+      The image to run. The default names a digline release — this action is on
+      its own version line (v1.x) and digline is not, so @v1 does not tell you
+      which digline you get, and this input is where that is written down. CI
+      checks it against the newest digline on PyPI, so it cannot quietly fall
+      behind. Point it at your own derivation — FROM
+      ghcr.io/digline/digline:<version> plus your suite's dependencies — when
+      your suite.py imports an application.
     required: false
-    default: "ghcr.io/digline/digline:0.9.0"
+    default: "ghcr.io/digline/digline:0.19.0"
 
   run:
     description: >-
