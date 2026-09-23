@@ -2,9 +2,10 @@
   "aggregate": [],
   "artifacts": {},
   "config_hash": "f104e032c0d0a966",
-  "created_at": "2026-09-10T15:45:51.271820+00:00",
+  "created_at": "2026-09-23T14:07:56.998162+00:00",
+  "digline_version": "0.19.0",
   "environment": "ci",
-  "git_commit": "cf9bf47dc38afadb7c5d1f8ae887a289ce994d0d-dirty",
+  "git_commit": "87eecc223b2cfd71748b0ce157bcb42533539122-dirty",
   "judge_config": {},
   "metadata": {},
   "redacted": false,
@@ -17,9 +18,9 @@
           "assertion": "contains",
           "assertion_id": "d697b44c72db127b",
           "metadata": {},
-          "reason": "'Acme Support' not found in the output",
-          "score": 0.0,
-          "status": "fail",
+          "reason": "'Acme Support' found in the output",
+          "score": 1.0,
+          "status": "pass",
           "threshold": 1.0,
           "tolerance": 0.0
         },
@@ -27,11 +28,11 @@
           "assertion": "length",
           "assertion_id": "79515b4664d3c45a",
           "metadata": {
-            "length": 27,
+            "length": 42,
             "maximum": 200,
             "unit": "characters"
           },
-          "reason": "27 characters, within bounds (at most 200)",
+          "reason": "42 characters, within bounds (at most 200)",
           "score": 1.0,
           "status": "pass",
           "threshold": 1.0,
@@ -70,7 +71,7 @@
       ]
     }
   ],
-  "schema_version": 9,
+  "schema_version": 16,
   "suite": "gate",
   "target_config": {
     "values": {
@@ -78,5 +79,17 @@
       "provider": "openai"
     }
   },
-  "tenant": "acme"
+  "tenant": "acme",
+  "usage": {
+    "judge": {
+      "calls": 0,
+      "counted": 0,
+      "spent_usd": 0.0
+    },
+    "target": {
+      "calls": 2,
+      "counted": 0,
+      "spent_usd": 0.0002
+    }
+  }
 }

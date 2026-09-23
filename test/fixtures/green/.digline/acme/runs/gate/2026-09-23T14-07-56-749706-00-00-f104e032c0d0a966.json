@@ -2,9 +2,10 @@
   "aggregate": [],
   "artifacts": {},
   "config_hash": "f104e032c0d0a966",
-  "created_at": "2026-09-10T15:45:42.579641+00:00",
+  "created_at": "2026-09-23T14:07:56.749706+00:00",
+  "digline_version": "0.19.0",
   "environment": "ci",
-  "git_commit": "cf9bf47dc38afadb7c5d1f8ae887a289ce994d0d-dirty",
+  "git_commit": "87eecc223b2cfd71748b0ce157bcb42533539122-dirty",
   "judge_config": {},
   "metadata": {},
   "redacted": false,
@@ -70,7 +71,7 @@
       ]
     }
   ],
-  "schema_version": 9,
+  "schema_version": 16,
   "suite": "gate",
   "target_config": {
     "values": {
@@ -78,5 +79,17 @@
       "provider": "openai"
     }
   },
-  "tenant": "acme"
+  "tenant": "acme",
+  "usage": {
+    "judge": {
+      "calls": 0,
+      "counted": 0,
+      "spent_usd": 0.0
+    },
+    "target": {
+      "calls": 2,
+      "counted": 0,
+      "spent_usd": 0.0002
+    }
+  }
 }
