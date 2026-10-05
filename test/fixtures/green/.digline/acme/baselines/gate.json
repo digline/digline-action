@@ -2,13 +2,14 @@
   "aggregate": [],
   "artifacts": {},
   "config_hash": "f104e032c0d0a966",
-  "created_at": "2026-09-23T14:07:56.749706+00:00",
-  "digline_version": "0.19.0",
+  "created_at": "2026-10-05T17:04:19.929287+00:00",
+  "digline_version": "0.29.0",
   "environment": "ci",
-  "git_commit": "87eecc223b2cfd71748b0ce157bcb42533539122-dirty",
+  "git_commit": "8a5b01bbf37b2de8261ffa398beafb3b9095e883-dirty",
   "judge_config": {},
   "metadata": {},
-  "promoted_at": "2026-09-23T14:07:56.870522+00:00",
+  "projected": false,
+  "promoted_at": "2026-10-05T17:04:20.129121+00:00",
   "redacted": false,
   "results": [
     {
@@ -72,7 +73,7 @@
       ]
     }
   ],
-  "schema_version": 16,
+  "schema_version": 18,
   "suite": "gate",
   "target_config": {
     "values": {
