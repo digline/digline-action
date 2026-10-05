@@ -55,7 +55,7 @@ inputs:
       ghcr.io/digline/digline:<version> plus your suite's dependencies — when
       your suite.py imports an application.
     required: false
-    default: "ghcr.io/digline/digline:0.19.0"
+    default: "ghcr.io/digline/digline:0.29.0"
 
   run:
     description: >-

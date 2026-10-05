@@ -24,14 +24,16 @@ stub() {
   done
   echo "the stub never came up"; exit 1
 }
-stop() { pkill -f "python3 stub.py" 2>/dev/null || true; }
+# `[Pp]ython3*`, because a framework Python on macOS shows as `Python stub.py`,
+# and a pattern that misses it leaves the stub alive, holding stdout and port.
+stop() { pkill -f "[Pp]ython3* stub\.py" 2>/dev/null || true; }
 trap stop EXIT
 
 # green: a baseline, and a later run that agrees with it.
 stop; rm -rf green/.digline
 stub green
 key=$(cd green && "$digline" run --suite suite.toml)
-(cd green && "$digline" promote --suite suite.toml --run "$key")
+(cd green && "$digline" promote --suite suite.toml --run "$key" --replacing none)
 (cd green && "$digline" run --suite suite.toml >/dev/null)
 (cd green && "$digline" compare --suite suite.toml --run latest)
 
