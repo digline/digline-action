@@ -6,6 +6,8 @@ a baseline you reviewed and committed. This is its GitHub Action. It holds this
 branch's output against that baseline and puts the comparison on the pull
 request.
 
+What this README describes holds from `v1.2.0`, and `@v1` points there.
+
 ```yaml
 name: digline
 on: [pull_request]
