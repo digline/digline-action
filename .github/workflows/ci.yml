@@ -350,3 +350,45 @@ jobs:
             echo "If digline ${latest} has only just shipped, its image may not"
             echo "be on ghcr yet — the step above is what says so."
             exit 1; }
+
+  gate:
+    name: gate
+    # The one check the `main` ruleset requires, by this name. The jobs above
+    # are named to be read, and will be reworded; this one is named to be
+    # required, and must not be. The ruleset once required five checks by
+    # their job ids while GitHub published them by their names: every job
+    # passed and the pull request stayed blocked, with nothing saying why.
+    #
+    # What it gates on is `needs:`, so the set of required jobs lives here and
+    # changes through a pull request, not in the repository settings.
+    #
+    # The opposite failure is the quiet one. A job added above and left out of
+    # `needs:` breaks nothing: no error, no red, and the gate simply does not
+    # cover it. A new job belongs in `needs:` unless it is listed below with
+    # its reason.
+    #
+    # Left out on purpose, so the absence reads as a choice:
+    # - `published` tests the released `@v1`, not the code in the pull
+    #   request, so it cannot pass or fail on the change being merged;
+    # - `image-tag` asks PyPI for the newest digline, so it turns red when
+    #   digline ships, whatever the pull request contains.
+    # Neither belongs in a merge gate. Both still run and still show.
+    #
+    # `if: always()`, because a job whose `needs:` failed is skipped, and a
+    # skipped job counts as passing on a required check: without it, a red
+    # job would leave this one skipped and the pull request mergeable. Not
+    # `!cancelled()`: `cancel-in-progress` cancels runs, and a cancelled run
+    # must not read as a pass either. Every result other than `success` fails
+    # it, `skipped` included, because none of these jobs has an `if:` of its
+    # own and so none is ever skipped on purpose.
+    if: always()
+    needs: [green, red, refused, unpulled, fence]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs: ${RESULTS}"
+          for r in ${RESULTS}; do
+            [ "${r}" = success ] || { echo "::error::a required job ended '${r}'"; exit 1; }
+          done
