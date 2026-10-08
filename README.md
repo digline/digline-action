@@ -56,6 +56,7 @@ renderings of one comparison drift apart the day either of them moves.
 | `2` | the run could not be judged — the job fails, and it comments. Nothing downstream of it is meaningful, including any conclusion from the green checks beside it |
 | `64` | digline refused the request you made: a suite that could not be loaded, a tenant that does not match. Not a verdict on the suite |
 | `70` | digline failed in a way nobody anticipated, and printed the traceback to the job log. Not a refusal, and not a verdict on the suite |
+| `255` | not digline's: the action could not run digline, and the code of what failed is one of the five above, or there is none. `exit-code` is empty. Not a verdict on the suite |
 
 `0` and `1` are the verdict; `2`, `64` and `70` are digline's codes that are not
 one. The action does not translate any of them into a pass or a fail of its
@@ -67,6 +68,13 @@ A code digline does not have is not digline's, and the action does not report
 it as one. If the image cannot be pulled, docker exits `125` before digline
 starts: the action fails with that code, the annotation says *digline-action
 failed; not a digline exit code*, and the `exit-code` output is empty.
+
+The action exits with the failing code only when that code cannot be mistaken
+for digline's. When what failed returned `0`, `1`, `2`, `64` or `70`, or
+returned nothing the action could record, the action exits `255` instead. A
+shell that stopped on its own `1`, for example, would otherwise read as
+*something got worse*. An exit code must never be readable as a verdict when
+nothing was judged. `exit-code` stays empty in this case as well.
 
 The outputs are readable **even when the gate fails**, which is the case that
 matters — the action records the verdict and then carries it, in that order, and
