@@ -28,6 +28,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+The example uses `@v1`, which moves with fixes. The Marketplace's copy button
+pins the exact tag, `@v1.2.0`. Pinning an exact tag or a commit SHA is a
+legitimate supply-chain choice, and it is a choice: a workflow that makes it
+does not receive the fixes.
+
 As written this **calls your provider and spends money**, because `run: true` is
 the default. To compare a run an earlier step already produced, set
 `run: false` — see [Splitting the spend from the gate](#splitting-the-spend-from-the-gate).
