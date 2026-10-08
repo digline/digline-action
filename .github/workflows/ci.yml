@@ -117,6 +117,112 @@ jobs:
             *) echo "the headline does not name the regression"; exit 1 ;;
           esac
 
+  refused:
+    name: A refused run exits 64, never 1
+    # The path that lost digline's code until v1.1.0: `digline run` failing.
+    # The action exited 1, "something got worse", about a run that does not
+    # exist, with no outputs and no comment. A suite path that names nothing is
+    # a refusal digline makes before it calls anything, so `run: true` here
+    # spends nothing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: gate
+        uses: ./
+        continue-on-error: true
+        with:
+          suite: test/fixtures/absent/suite.toml
+          image: ${{ env.TEST_IMAGE }}
+          run: "true"
+          comment: "false"
+
+      - name: digline's 64, and all four outputs
+        if: always()
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          CODE: ${{ steps.gate.outputs.exit-code }}
+          HEADLINE: ${{ steps.gate.outputs.headline }}
+          KEY: ${{ steps.gate.outputs.run-key }}
+          REPORT: ${{ steps.gate.outputs.report }}
+        run: |
+          set -euo pipefail
+          echo "outcome: ${OUTCOME}; exit-code: '${CODE}'; headline: ${HEADLINE}"
+          [ "${OUTCOME}" = "failure" ] || { echo "a refused run passed the gate"; exit 1; }
+          [ "${CODE}" = "64" ] || { echo "expected digline's 64, got '${CODE}'"; exit 1; }
+          [ -z "${KEY}" ] || { echo "run-key '${KEY}' for a run that does not exist"; exit 1; }
+          [ -f "${REPORT}" ] || { echo "the report output names no file"; exit 1; }
+          case "${HEADLINE}" in
+            "digline run exited 64: digline refused the request."*) ;;
+            *) echo "the headline does not name the refusal"; exit 1 ;;
+          esac
+
+  unpulled:
+    name: An image that cannot be pulled is the action failing, not digline
+    # docker exits 125 when it cannot pull or start the image. That number is
+    # docker's: it is reported as this action failing, `exit-code` stays empty,
+    # and nothing calls it a refusal by digline, which is what it used to say.
+    #
+    # Asked twice, `run: "false"` and then `run: "true"`. With `run: true` the
+    # image fails at `digline run` instead of `digline compare`, the path that
+    # used to turn every failure into a 1. `run: true` is the default, and the
+    # default path is measured on the runner, not inferred from the other one.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: gate
+        uses: ./
+        continue-on-error: true
+        with:
+          suite: test/fixtures/green/suite.toml
+          root: test/fixtures/green
+          image: ghcr.io/digline/digline:0.0.0-absent
+          run: "false"
+          comment: "false"
+
+      - name: No digline code, and a headline that says whose failure it is
+        if: always()
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          CODE: ${{ steps.gate.outputs.exit-code }}
+          HEADLINE: ${{ steps.gate.outputs.headline }}
+        run: |
+          set -euo pipefail
+          echo "outcome: ${OUTCOME}; exit-code: '${CODE}'; headline: ${HEADLINE}"
+          [ "${OUTCOME}" = "failure" ] || { echo "an unpulled image passed the gate"; exit 1; }
+          [ -z "${CODE}" ] || { echo "exit-code '${CODE}' for a code digline never gave"; exit 1; }
+          case "${HEADLINE}" in
+            *"not reported as a digline exit code"*) ;;
+            *) echo "the headline does not say the action failed"; exit 1 ;;
+          esac
+
+      - id: gate-run
+        uses: ./
+        continue-on-error: true
+        with:
+          suite: test/fixtures/green/suite.toml
+          root: test/fixtures/green
+          image: ghcr.io/digline/digline:0.0.0-absent
+          run: "true"
+          comment: "false"
+
+      - name: The same with run true, the default, failing at digline run
+        if: always()
+        env:
+          OUTCOME: ${{ steps.gate-run.outcome }}
+          CODE: ${{ steps.gate-run.outputs.exit-code }}
+          HEADLINE: ${{ steps.gate-run.outputs.headline }}
+        run: |
+          set -euo pipefail
+          echo "outcome: ${OUTCOME}; exit-code: '${CODE}'; headline: ${HEADLINE}"
+          [ "${OUTCOME}" = "failure" ] || { echo "an unpulled image passed the gate"; exit 1; }
+          [ -z "${CODE}" ] || { echo "exit-code '${CODE}' for a code digline never gave"; exit 1; }
+          case "${HEADLINE}" in
+            *"not reported as a digline exit code"*) ;;
+            *) echo "the headline does not say the action failed"; exit 1 ;;
+          esac
+
   published:
     name: The README's own line works — digline/digline-action@v1
     # Every other job uses `./`, which tests the working tree. This one uses
@@ -148,12 +254,15 @@ jobs:
           echo "digline/digline-action@v1 resolves and gates: ${{ steps.gate.outputs.headline }}"
 
   fence:
-    name: The comment's fence is computed, not typed
+    name: The comment's fence, and every outcome's words and code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - run: pip install --quiet pyyaml
       - run: test/fence.sh
+      # Every outcome through the shipped steps with a stubbed docker: the
+      # only way to reach a 70, which no real image produces on demand.
+      - run: test/outcomes.sh
 
   image-tag:
     name: The default image tag is real, current, and agreed on

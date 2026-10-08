@@ -54,11 +54,27 @@ renderings of one comparison drift apart the day either of them moves.
 | `0` | nothing got worse — the job passes |
 | `1` | something got worse — the job fails, and it comments |
 | `2` | the run could not be judged — the job fails, and it comments. Nothing downstream of it is meaningful, including any conclusion from the green checks beside it |
-| `64` | digline refused the request you made. Not a verdict on the suite |
+| `64` | digline refused the request you made: a suite that could not be loaded, a tenant that does not match. Not a verdict on the suite |
+| `70` | digline failed in a way nobody anticipated, and printed the traceback to the job log. Not a refusal, and not a verdict on the suite |
+| `255` | not digline's: the action could not run digline, and the code of what failed is one of the five above, or there is none. `exit-code` is empty. Not a verdict on the suite |
 
-The action does not translate these into a pass or a fail of its own: it exits
-with digline's code, so a later step can tell `1` from `2` and act on the
-difference.
+`0` and `1` are the verdict; `2`, `64` and `70` are digline's codes that are not
+one. The action does not translate any of them into a pass or a fail of its
+own: it exits with digline's code, whether `digline run` or `digline compare`
+gave it, so a later step can tell `1` from `2` and act on the difference. It
+never puts a `1` where digline gave another code.
+
+A code digline does not have is not digline's, and the action does not report
+it as one. If the image cannot be pulled, docker exits `125` before digline
+starts: the action fails with that code, the annotation says *digline-action
+failed; not a digline exit code*, and the `exit-code` output is empty.
+
+The action exits with the failing code only when that code cannot be mistaken
+for digline's. When what failed returned `0`, `1`, `2`, `64` or `70`, or
+returned nothing the action could record, the action exits `255` instead. A
+shell that stopped on its own `1`, for example, would otherwise read as
+*something got worse*. An exit code must never be readable as a verdict when
+nothing was judged. `exit-code` stays empty in this case as well.
 
 The outputs are readable **even when the gate fails**, which is the case that
 matters — the action records the verdict and then carries it, in that order, and
@@ -86,6 +102,7 @@ its own CI asserts this against a red fixture:
             0) echo "proceed" ;;
             1) echo "something got worse"; exit 1 ;;
             2) echo "could not be judged — nothing downstream is meaningful"; exit 1 ;;
+            *) echo "no verdict (exit-code '$CODE'): see the headline"; exit 1 ;;
           esac
 ```
 
@@ -109,7 +126,17 @@ right default and needs none of this.
 
 Outputs: `exit-code`, `headline` (the one-sentence verdict), `run-key`, and
 `report` (the path to the compare output, verbatim, if you want to attach it as
-an artifact). All four are set whether the gate passes or fails.
+an artifact). All four are set whether the gate passes or fails, on every path,
+a failed `digline run` included. Where there is nothing to put in one, it is
+set and empty, and the empty value means something:
+
+- `exit-code` is empty only when digline gave no code, because the action
+  itself failed;
+- `run-key` is empty when `digline run` failed, because there is no run;
+- the `report` file exists and is empty when nothing was compared;
+- `headline` is the comparison's first line when digline compared, and
+  otherwise a sentence from the action naming the code. It never carries
+  digline's stderr, which can quote your suite; that stays in the job log.
 
 `suite`, `root`, `tenant` and `env` are the CLI's own flag names and mean exactly
 what they mean there.
@@ -226,8 +253,11 @@ how this action may be triggered.
 
 **Use `pull_request`.** A pull request from a fork then runs with a read-only
 `GITHUB_TOKEN` and **no access to your secrets**, which is what makes it safe to
-execute a contributor's suite at all. The comment step simply does not post on
-such a run, and that is correct rather than a limitation.
+execute a contributor's suite at all. On such a run the comment step still
+tries: it looks for its earlier comment and then edits or posts one, the
+read-only token refuses the write, and the step logs a warning, *the comment
+was not posted*, and exits 0. The job's result is still digline's code. No
+comment on a fork's pull request is correct rather than a limitation.
 
 > **Never `pull_request_target` with a checkout of the pull request's head.**
 > That combination gives a fork's code your secrets — your provider API keys —
