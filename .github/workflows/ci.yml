@@ -33,7 +33,7 @@ concurrency:
 #: The image the tests pin. Explicit rather than inherited from the action's
 #: default, so a job asserts the two agree instead of both drifting together.
 env:
-  TEST_IMAGE: ghcr.io/digline/digline:0.29.0
+  TEST_IMAGE: ghcr.io/digline/digline:0.30.0
 
 jobs:
   green:
