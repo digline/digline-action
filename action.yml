@@ -16,8 +16,8 @@
 # reader can see rather than inside a container contract.
 name: digline
 description: >-
-  Hold this branch's LLM output against the baseline committed in your
-  repository, and comment the comparison on the pull request.
+  LLM regression gate for pull requests: compare this branch against a
+  baseline committed in your repository.
 author: Alessandro Prandini
 
 branding:
