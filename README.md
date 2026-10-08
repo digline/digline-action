@@ -100,7 +100,7 @@ right default and needs none of this.
 | `root` | `.` | the directory holding `.digline/` — the CLI's `--root` |
 | `tenant` | | verify the suite's tenant. Verifies, never overrides: a CI job states what it believes it is running and is told when it is wrong |
 | `env` | | verify the suite's environment, the same way |
-| `image` | `ghcr.io/digline/digline:0.29.0` | see below |
+| `image` | `ghcr.io/digline/digline:0.30.0` | see below |
 | `run` | `true` | produce a run before comparing. **This calls your provider and spends money.** `false` compares the run a previous step already produced |
 | `comment` | `true` | post the comparison on the pull request. Needs `pull-requests: write` |
 | `comment-on-success` | `false` | comment when nothing got worse, too |
@@ -141,7 +141,7 @@ from digline.run import Suite
 So derive the image once:
 
 ```dockerfile
-FROM ghcr.io/digline/digline:0.29.0
+FROM ghcr.io/digline/digline:0.30.0
 COPY requirements.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 ```
@@ -152,7 +152,7 @@ and point the action at it:
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
-          image: ghcr.io/acme/digline-with-our-app:0.29.0
+          image: ghcr.io/acme/digline-with-our-app:0.30.0
 ```
 
 The default tag names a **digline** release, not this action's version: `@v1` is
@@ -194,7 +194,7 @@ as root and every later step that touches it fails.
 ```yaml
       - run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
-            ghcr.io/digline/digline:0.29.0 run --suite eval/suite.py
+            ghcr.io/digline/digline:0.30.0 run --suite eval/suite.py
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
