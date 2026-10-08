@@ -1,7 +1,10 @@
 # digline-action
 
-Hold this branch's LLM output against the baseline committed in your repository,
-and put the comparison on the pull request.
+[digline](https://digline.dev/) catches LLM quality regressions in your
+repository: it runs your cases against your model and compares the result with
+a baseline you reviewed and committed. This is its GitHub Action. It holds this
+branch's output against that baseline and puts the comparison on the pull
+request.
 
 ```yaml
 name: digline
@@ -23,9 +26,27 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+As written this **calls your provider and spends money**, because `run: true` is
+the default. To compare a run an earlier step already produced, set
+`run: false` — see [Splitting the spend from the gate](#splitting-the-spend-from-the-gate).
+
+It runs digline's image with `docker run`, so it needs **a Linux runner with
+Docker**; `ubuntu-latest` has both. GitHub's macOS runners have no Docker at
+all. Its Windows runners have Docker, but set up for Windows containers, and
+digline's image is a Linux one.
+
 That runs the suite, compares the result against
 `.digline/<tenant>/baselines/<suite>.json` — the baseline you committed — and
-fails the job if anything got worse. On a regression it comments:
+fails the job if anything got worse.
+
+*Baseline*, *suite*, *tenant* and *env* are digline's words: the
+[guide](https://digline.dev/product/guide/#1-a-baseline-is-a-photograph)
+explains the baseline — the *reference* the comment compares against — and the
+suite; the [API reference](https://digline.dev/product/api/#suite) explains
+tenant and env. A *suspended* case is one taken out of judgement with a stated
+reason: [trigger three](https://digline.dev/product/guide/#trigger-three-a-case-stopped-being-judged).
+
+On a regression it comments:
 
 > ### digline — `eval/suite.py`
 >
@@ -41,6 +62,11 @@ fails the job if anything got worse. On a regression it comments:
 > threshold of 0.700000, and beyond the 0.880000–0.950000 this check measured
 > across 5 samples
 > ```
+
+The `0.880000–0.950000` in the last line is the check's **noise floor**: how far
+it moved on its own, across the baseline's own samples. It is how digline tells
+a regression from a judge that answered differently twice —
+[how it is measured](https://digline.dev/product/guide/#the-second-control-what-the-check-measured-about-itself).
 
 The block is `digline compare`'s own output, verbatim. It is not reassembled
 here into a table: the sentence a reviewer reads on the pull request is the
@@ -147,6 +173,30 @@ A comment on every green pull request is what teaches a reviewer to scroll past
 digline's comments, and by the time one matters they have learned to. The green
 check mark already carries that news. A regression and an unjudged run always
 comment, whatever this is set to.
+
+### The comment's limits
+
+The action edits its earlier comment instead of adding one per push, and finds
+it by a marker built from `suite` alone. That has three consequences, open as
+[#5](https://github.com/digline/digline-action/issues/5) with no fix planned:
+
+- `root`, `tenant` and `env` do not enter the marker. Two invocations on one
+  pull request with the same `suite` overwrite each other's comment, across
+  jobs and workflows, and the pull request shows whichever wrote last.
+- The marker normalises the path, so distinct suites collide:
+  `eval/suite.py:smoke` and `eval/suite.py-smoke` get one comment.
+- The comment it edits is the last one on the pull request that starts with the
+  marker, **whoever wrote it**. When that is somebody else's, the default token
+  is refused the edit, the step warns *the comment was not posted*, and the
+  job's result is still digline's code.
+
+And one that follows from a default. With `comment-on-success: false`, the
+default, a comment is never brought back to green: a suite that gets worse
+comments *Something got worse*, and when a later push fixes it the check turns
+green while that comment stays, saying what is no longer true.
+`comment-on-success: true` keeps it current, at the cost of a comment on every
+green pull request — the cost [above](#why-comment-on-success-is-off) is why it
+is off.
 
 ## The escape hatch: your own image
 
