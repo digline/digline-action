@@ -90,3 +90,26 @@ case "${marker}" in
 esac
 
 echo "OK: the marker cannot carry a quote or close itself early."
+
+# --------------------------------------------------------------------------- #
+# A report with no backtick at all, which is the ordinary one, still comments.
+# --------------------------------------------------------------------------- #
+# The fence is computed from a grep, and a grep that matches nothing exits 1.
+# Under `set -euo pipefail` that ended the step before the body was written, so
+# from v1.0.0 the comment was posted only for a report that happened to carry a
+# backtick: never for the regression in the README's own example.
+cat > "$work/plain.txt" <<'REPORT'
+1 check got worse compared with the reference. Every case could be judged.
+
+where-is-my-order · contains · Went from passing to failing (1.000000 → 0.000000).
+REPORT
+rm -f "$work/body.md"
+PATH="$work/bin:$PATH" RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 \
+SUITE=test/fixtures/worse/suite.toml REPORT="$work/plain.txt" STATUS=1 \
+  bash -e "$work/comment.sh" > /dev/null || { echo "FAIL: the comment step died on a plain report"; exit 1; }
+[ -s "$work/body.md" ] || { echo "FAIL: no comment for a report without backticks"; exit 1; }
+[ "$(grep -cE '^`{3}$' "$work/body.md")" -eq 2 ] || {
+  echo "FAIL: a plain report is not in a three-backtick fence"; exit 1; }
+
+echo "OK: a report without backticks is commented, in the shortest fence."
+

@@ -298,7 +298,11 @@ runs:
         # (`compare` does *not* print the judge's own `reason` — its lines are
         # case, assertion and what happened. An earlier version of this comment
         # said it did. The rule is unchanged; only the example was wrong.)
-        longest=$(grep -o '`\+' "${REPORT}" | awk '{ print length }' | sort -rn | head -n 1)
+        # `|| true` inside, because a report with no backtick at all is the
+        # ordinary one: grep then exits 1, `pipefail` hands that to the
+        # assignment, `set -e` ends the step, and no comment is posted.
+        # That is how every comment was lost from v1.0.0 to this line.
+        longest=$({ grep -o '`\+' "${REPORT}" || true; } | awk '{ print length }' | sort -rn | head -n 1)
         fence=$(printf '`%.0s' $(seq $(( ${longest:-0} < 3 ? 3 : longest + 1 ))))
 
         {
