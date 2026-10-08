@@ -45,7 +45,7 @@ REPORT
 
 PATH="$work/bin:$PATH" \
 RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 \
-SUITE=test/fixtures/green/suite.toml REPORT="$work/report.txt" STATUS=1 \
+SUITE=test/fixtures/green/suite.toml REPORT="$work/report.txt" STATUS=1 KIND=verdict \
   bash "$work/comment.sh" > /dev/null
 
 longest=$(grep -o '`\+' "$work/report.txt" | awk '{ print length }' | sort -rn | head -n 1)
@@ -74,7 +74,7 @@ echo "OK: the fence is computed, not typed."
 # workflow-author values rather than attacker values, and both are one `tr`
 # away from impossible.
 rm -f "$work/body.md"
-PATH="$work/bin:$PATH" RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 SUITE='a".toml-->x' REPORT="$work/report.txt" STATUS=1   bash "$work/comment.sh" > /dev/null
+PATH="$work/bin:$PATH" RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 SUITE='a".toml-->x' REPORT="$work/report.txt" STATUS=1 KIND=verdict bash "$work/comment.sh" > /dev/null
 
 marker=$(head -n 1 "$work/body.md")
 echo "marker from a hostile suite name: ${marker}"
@@ -105,7 +105,7 @@ where-is-my-order · contains · Went from passing to failing (1.000000 → 0.00
 REPORT
 rm -f "$work/body.md"
 PATH="$work/bin:$PATH" RUNNER_TEMP="$work" GH_BODY="$work/body.md" GH_TOKEN=x GH_REPO=acme/app PR=7 \
-SUITE=test/fixtures/worse/suite.toml REPORT="$work/plain.txt" STATUS=1 \
+SUITE=test/fixtures/worse/suite.toml REPORT="$work/plain.txt" STATUS=1 KIND=verdict \
   bash -e "$work/comment.sh" > /dev/null || { echo "FAIL: the comment step died on a plain report"; exit 1; }
 [ -s "$work/body.md" ] || { echo "FAIL: no comment for a report without backticks"; exit 1; }
 [ "$(grep -cE '^`{3}$' "$work/body.md")" -eq 2 ] || {

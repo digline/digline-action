@@ -99,20 +99,35 @@ inputs:
     default: ${{ github.token }}
 
 # These survive the action failing, which is the case that matters: the gate
-# step records the verdict and exits 0, and the `verdict` step at the end is
-# what carries it. The action's own CI asserts this on a red fixture.
+# step records the outcome and exits 0, and the `verdict` step at the end is
+# what carries it. All four are written on every path, a failed `digline run`
+# included, and the action's own CI asserts it on each one.
 outputs:
   exit-code:
-    description: "0 fine, 1 something got worse, 2 the run could not be judged"
+    description: >-
+      digline's exit code, unchanged. 0 nothing got worse, 1 something got
+      worse: those two are the verdict. 2 the run could not be judged, 64
+      digline refused the request, 70 digline failed in a way nobody
+      anticipated: those three are digline's and are not a verdict. Empty when
+      digline gave no code because the action itself failed, as when the image
+      could not be pulled: that is not a digline code and is not reported as
+      one.
     value: ${{ steps.gate.outputs.exit-code }}
   headline:
-    description: "the one-sentence verdict, the same sentence the report shows"
+    description: >-
+      The first line of the comparison when digline compared: the same
+      sentence the report shows. Otherwise a sentence from this action that
+      names the code and where the reason is, never digline's stderr.
     value: ${{ steps.gate.outputs.headline }}
   run-key:
-    description: "the key of the run that was compared"
+    description: >-
+      The key of the run that was compared; `latest` with `run: false`. Empty
+      when `digline run` failed and there is no run.
     value: ${{ steps.gate.outputs.run-key }}
   report:
-    description: "path to the file holding the compare output, verbatim"
+    description: >-
+      Path to the file holding the compare output, verbatim. The file always
+      exists, and is empty when nothing was compared.
     value: ${{ steps.gate.outputs.report }}
 
 runs:
@@ -141,6 +156,109 @@ runs:
         # fixture is for.
         set +e
         set -uo pipefail
+
+        digline() {
+          docker run "${docker_args[@]}" "${INPUT_IMAGE}" "$@"
+        }
+
+        report="${RUNNER_TEMP:-/tmp}/digline-compare.txt"
+        : > "${report}"
+        key=""
+
+        # A code is one of three kinds, and the kind decides every word said about
+        # it. `verdict`: 0 and 1, digline's answer about the suite. `digline`: 2, 64
+        # and 70, digline's own codes that are not a verdict. `action`: anything else,
+        # which digline never exits with, so it is this action failing (an image that
+        # could not be pulled is docker's 125) and it is never reported as digline's.
+        # The table is digline's `wire/contract.py`, and 70 is ADR 0041's.
+        kind_of() {
+          case "$1" in
+            0|1) echo verdict ;;
+            2|64|70) echo digline ;;
+            *) echo action ;;
+          esac
+        }
+        name_of() {
+          case "$1" in
+            0) echo "nothing got worse" ;;
+            1) echo "something got worse" ;;
+            2) echo "the run could not be judged" ;;
+            64) echo "digline refused the request" ;;
+            70) echo "digline failed in a way nobody anticipated" ;;
+          esac
+        }
+
+        # The one place the outputs are written, and every path ends here: a gate that
+        # stops before recording leaves `exit-code` empty, and an empty code is how
+        # this action used to turn a refused run into a 1.
+        #
+        #   record <what ran> <code> [action]
+        #
+        # `action` forces the third kind whatever the number, for a stop of this step's
+        # own: its code is the shell's, and a 1 from bash is not digline's 1.
+        #
+        # The headline is the comparison's first line when there is one. Otherwise it
+        # is a sentence written here, and never digline's stderr: what a suite or the
+        # code it imports prints there can quote the payload, and it reaches the
+        # person reading the log and no one else. (ADR 0043)
+        recorded=""
+        record() {
+          local what=$1 code=$2 kind headline failed=""
+          kind=${3:-$(kind_of "${code}")}
+          headline=$(head -n 1 "${report}")
+          case "${kind}" in
+            verdict|digline)
+              if [ -z "${headline}" ]; then
+                headline="${what} exited ${code}: $(name_of "${code}")."
+                headline="${headline} It is not a verdict on the suite; the reason is in the job log."
+              fi
+              ;;
+            action)
+              failed=${code}
+              headline="${what} ended with ${code}, which is not reported as a digline exit"
+              headline="${headline} code: this action failed before digline gave an answer."
+              headline="${headline} 125 to 127 are docker's own, an image that could not be"
+              headline="${headline} pulled or started. The reason is in the job log."
+              code=""
+              ;;
+          esac
+
+          # The .digline/ a run writes belongs to whoever owns the checkout. A warning
+          # and not a failure: it says the --user above did not take, which will break
+          # a later step of the caller's workflow, but it says nothing about the
+          # comparison, and the comparison is what this action is for.
+          stored="${GITHUB_WORKSPACE:-.}/${INPUT_ROOT:-.}/.digline"
+          if [ -d "${stored}" ] &&
+             find "${stored}" ! -user "$(id -u)" -print -quit | grep -q .; then
+            note="${stored} holds files owned by another user, so later steps"
+            note="${note} that touch it may fail. This means --user did not take."
+            echo "::warning title=digline wrote files you do not own::${note}"
+          fi
+
+          {
+            echo "exit-code=${code}"
+            echo "run-key=${key}"
+            echo "report=${report}"
+            echo "kind=${kind}"
+            echo "failed=${failed}"
+            echo "headline<<DIGLINE_HEADLINE"
+            echo "${headline}"
+            echo "DIGLINE_HEADLINE"
+          } >> "${GITHUB_OUTPUT}"
+          recorded=1
+
+          case "${kind}:${code}" in
+            verdict:0) echo "::notice title=digline: nothing got worse::${headline}" ;;
+            verdict:1) echo "::error title=digline: something got worse::${headline}" ;;
+            digline:2) echo "::error title=digline: the run could not be judged::${headline}" ;;
+            digline:64) echo "::error title=digline refused the request (exit 64)::${headline}" ;;
+            digline:70) echo "::error title=digline: internal error (exit 70)::${headline}" ;;
+            action:*) echo "::error title=digline-action failed; not a digline exit code::${headline}" ;;
+          esac
+        }
+        # A stop nobody planned for, `set -u` meeting an unset name included, still
+        # records: as this action failing, with the code the shell stopped on.
+        trap 'rc=$?; [ -n "${recorded}" ] || record "the gate step" "${rc}" action' EXIT
 
         # --user, and it is the whole reason this is a shell step you can read.
         #
@@ -174,70 +292,44 @@ runs:
         if [ -n "${INPUT_TENANT}" ]; then perimeter+=(--tenant "${INPUT_TENANT}"); fi
         if [ -n "${INPUT_ENV}" ]; then perimeter+=(--env "${INPUT_ENV}"); fi
 
-        digline() {
-          docker run "${docker_args[@]}" "${INPUT_IMAGE}" "$@"
-        }
 
-        key=latest
         if [ "${INPUT_RUN}" = "true" ]; then
           # The planned call count goes to stderr and lands in the log before
           # the first call, which is where somebody paying for it can see it.
           # stdout is the key alone, which is why it can be captured like this.
-          if ! key=$(digline run --suite "${INPUT_SUITE}" "${perimeter[@]}"); then
-            note="the suite could not be run; the log above is the reason"
-            echo "::error title=digline run failed::${note}"
-            exit 1
+          key=$(digline run --suite "${INPUT_SUITE}" "${perimeter[@]}")
+          ran=$?
+          if [ "${ran}" -ne 0 ]; then
+            # digline's code, whatever it is: 64 for a suite that could not be
+            # loaded, 70 for a failure nobody anticipated. Never 1, which is
+            # "something got worse" about a run that does not exist. (ADR 0041)
+            key=""
+            record "digline run" "${ran}"
+            exit 0
           fi
           echo "ran ${INPUT_SUITE}: ${key}"
+        else
+          key=latest
         fi
 
-        report="${RUNNER_TEMP:-/tmp}/digline-compare.txt"
         # stdout alone. `latest` can put a note on stderr, and merging the two
         # would put it in the report at a position nothing guarantees — while
         # the first line of the report is what becomes the `headline` output.
         # The note still reaches the job log, which is where it is actionable.
         digline compare --suite "${INPUT_SUITE}" --run "${key}" \
           "${perimeter[@]}" | tee "${report}"
-        status=${PIPESTATUS[0]}
+        compared=${PIPESTATUS[0]}
+        record "digline compare" "${compared}"
 
-        # The .digline/ the run just wrote belongs to whoever owns the checkout.
-        # A warning and not a failure: it says the --user above did not take,
-        # which will break a later step of the caller's workflow — but it says
-        # nothing about the comparison, and the comparison is what this action
-        # is for.
-        stored="${GITHUB_WORKSPACE}/${INPUT_ROOT}/.digline"
-        if [ -d "${stored}" ] &&
-           find "${stored}" ! -user "$(id -u)" -print -quit | grep -q .; then
-          note="${stored} holds files owned by another user, so later steps"
-          note="${note} that touch it may fail. This means --user did not take."
-          echo "::warning title=digline wrote files you do not own::${note}"
-        fi
-
-        {
-          echo "exit-code=${status}"
-          echo "run-key=${key}"
-          echo "report=${report}"
-          echo "headline<<DIGLINE_HEADLINE"
-          head -n 1 "${report}"
-          echo "DIGLINE_HEADLINE"
-        } >> "${GITHUB_OUTPUT}"
-
-
-        case "${status}" in
-          0) echo "::notice title=digline::$(head -n 1 "${report}")" ;;
-          1) echo "::error title=digline: something got worse::$(head -n 1 "${report}")" ;;
-          2) echo "::error title=digline: the run could not be judged::$(head -n 1 "${report}")" ;;
-          *) echo "::error title=digline refused the request::exit ${status}, which is not a verdict on the suite" ;;
-        esac
-
-        # This step *reports* the verdict; the `verdict` step at the end of the
+        # This step *reports* the outcome; the `verdict` step at the end of the
         # action is what carries it. Exiting 0 here deliberately, rather than
         # on whatever the last construct happened to return.
         exit 0
 
-    # Always, so that the comment happens on the exit codes it exists for: 1 and
-    # 2 are the two the step above marks as errors, and a comment posted only on
-    # success would be a comment posted only when nobody needs it.
+    # Always, so that the comment happens on the outcomes it exists for: every
+    # one but 0 is marked as an error by the step above, and a comment posted
+    # only on success would be a comment posted only when nobody needs it. An
+    # action failure leaves `exit-code` empty, which is not '0', so it comments.
     - id: comment
       if: >-
         always()
@@ -252,14 +344,20 @@ runs:
         SUITE: ${{ inputs.suite }}
         REPORT: ${{ steps.gate.outputs.report }}
         STATUS: ${{ steps.gate.outputs.exit-code }}
+        KIND: ${{ steps.gate.outputs.kind }}
+        FAILED: ${{ steps.gate.outputs.failed }}
+        HEADLINE: ${{ steps.gate.outputs.headline }}
       run: |
         set -euo pipefail
 
-        case "${STATUS}" in
-          0) verdict="Nothing got worse." ;;
-          1) verdict="**Something got worse.**" ;;
-          2) verdict="**The run could not be judged**, so nothing downstream of it is meaningful." ;;
-          *) verdict="digline refused the request (exit ${STATUS}). This is not a verdict on the suite." ;;
+        # The three kinds the gate step recorded, in the same words.
+        case "${KIND}:${STATUS}" in
+          verdict:0) verdict="Nothing got worse." ;;
+          verdict:1) verdict="**Something got worse.**" ;;
+          digline:2) verdict="**The run could not be judged**, so nothing downstream of it is meaningful." ;;
+          digline:64) verdict="**digline refused the request** (exit \`64\`). This is not a verdict on the suite." ;;
+          digline:70) verdict="**digline failed in a way nobody anticipated** (exit \`70\`). This is not a verdict on the suite." ;;
+          *) verdict="**This action failed before digline gave an answer** (\`${FAILED:-nothing recorded}\`, which is not reported as a digline exit code). This is not a verdict on the suite." ;;
         esac
 
         # The comparison goes in verbatim, in a fence. It already carries the
@@ -298,27 +396,40 @@ runs:
         # (`compare` does *not* print the judge's own `reason` — its lines are
         # case, assertion and what happened. An earlier version of this comment
         # said it did. The rule is unchanged; only the example was wrong.)
-        # `|| true` inside, because a report with no backtick at all is the
-        # ordinary one: grep then exits 1, `pipefail` hands that to the
-        # assignment, `set -e` ends the step, and no comment is posted.
-        # That is how every comment was lost from v1.0.0 to this line.
-        longest=$({ grep -o '`\+' "${REPORT}" || true; } | awk '{ print length }' | sort -rn | head -n 1)
-        fence=$(printf '`%.0s' $(seq $(( ${longest:-0} < 3 ? 3 : longest + 1 ))))
-
         {
           echo "${marker}"
           echo "### digline — \`${SUITE}\`"
           echo
           echo "${verdict}"
           echo
-          echo "${fence}"
-          cat "${REPORT}"
-          echo "${fence}"
+          if [ -n "${REPORT}" ] && [ -s "${REPORT}" ]; then
+            # `|| true` inside, because a report with no backtick at all is the
+            # ordinary one: grep then exits 1, `pipefail` hands that to the
+            # assignment, `set -e` ends the step, and no comment is posted.
+            # That is how every comment was lost from v1.0.0 to this line.
+            longest=$({ grep -o '`\+' "${REPORT}" || true; } | awk '{ print length }' | sort -rn | head -n 1)
+            fence=$(printf '`%.0s' $(seq $(( ${longest:-0} < 3 ? 3 : longest + 1 ))))
+            echo "${fence}"
+            cat "${REPORT}"
+            echo "${fence}"
+          else
+            # Nothing was compared, so there is no comparison to quote. The
+            # reason is digline's stderr, and it stays in the job log: what a
+            # suite or the code it imports prints there can quote the payload,
+            # and this comment reaches everybody who can read the pull request.
+            # (ADR 0043)
+            echo "${HEADLINE}"
+          fi
           echo
-          echo "<sub>Exit code \`${STATUS}\`: \`0\` fine, \`1\` something got"
-          echo "worse, \`2\` could not be judged. The baseline is the one"
-          echo "committed in this repository; promoting a new one is a person's"
-          echo "command, never this action's.</sub>"
+          if [ -n "${STATUS}" ]; then
+            echo "<sub>Exit code \`${STATUS}\`: \`0\` fine, \`1\` something got"
+            echo "worse, \`2\` could not be judged, \`64\` refused, \`70\` failed"
+            echo "unexpectedly. The baseline is the one committed in this"
+          else
+            echo "<sub>No digline exit code. The baseline is the one committed in this"
+          fi
+          echo "repository; promoting a new one is a person's command, never this"
+          echo "action's.</sub>"
         } > "${body}"
 
         # Edited in place rather than appended to, so a branch pushed eleven
@@ -355,16 +466,24 @@ runs:
         exit 0
 
     # The gate itself, last, so the comment is posted before the job fails.
-    # The exit code is digline's, unchanged: it is the contract, and an action
-    # that translated it into a pass/fail of its own would be throwing away the
-    # difference between "this got worse" and "this could not be judged".
+    # The exit code is digline's, unchanged, 2, 64 and 70 included: it is the
+    # contract, and an action that translated it into a pass/fail of its own
+    # would be throwing away the difference between "this got worse" and "this
+    # could not be judged". It never puts a 1 where digline gave another code.
     - id: verdict
       if: always()
       shell: bash
       env:
-        # Defaulted rather than interpolated bare: if the step above died before
-        # it could write its outputs, this is empty, and a bare `exit` would
-        # return 0 — reporting a green gate for a job that never judged
-        # anything. Which is the vacuously green assertion, at the last step.
         STATUS: ${{ steps.gate.outputs.exit-code }}
-      run: exit "${STATUS:-1}"
+        FAILED: ${{ steps.gate.outputs.failed }}
+      run: |
+        if [ -n "${STATUS}" ]; then exit "${STATUS}"; fi
+        # No digline code: this action failed. It exits with what failed, so
+        # docker's 125 reads as docker's. Never 0, which would be a green gate
+        # for a job that judged nothing, and never a number in digline's table,
+        # which would read as digline's answer: 255 stands in for both, and for
+        # a gate step that recorded nothing at all.
+        case "${FAILED}" in
+          ''|0|1|2|64|70) exit 255 ;;
+          *) exit "${FAILED}" ;;
+        esac
