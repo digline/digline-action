@@ -162,6 +162,11 @@ jobs:
     # docker exits 125 when it cannot pull or start the image. That number is
     # docker's: it is reported as this action failing, `exit-code` stays empty,
     # and nothing calls it a refusal by digline, which is what it used to say.
+    #
+    # Asked twice, `run: "false"` and then `run: "true"`. With `run: true` the
+    # image fails at `digline run` instead of `digline compare`, the path that
+    # used to turn every failure into a 1. `run: true` is the default, and the
+    # default path is measured on the runner, not inferred from the other one.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -182,6 +187,32 @@ jobs:
           OUTCOME: ${{ steps.gate.outcome }}
           CODE: ${{ steps.gate.outputs.exit-code }}
           HEADLINE: ${{ steps.gate.outputs.headline }}
+        run: |
+          set -euo pipefail
+          echo "outcome: ${OUTCOME}; exit-code: '${CODE}'; headline: ${HEADLINE}"
+          [ "${OUTCOME}" = "failure" ] || { echo "an unpulled image passed the gate"; exit 1; }
+          [ -z "${CODE}" ] || { echo "exit-code '${CODE}' for a code digline never gave"; exit 1; }
+          case "${HEADLINE}" in
+            *"not reported as a digline exit code"*) ;;
+            *) echo "the headline does not say the action failed"; exit 1 ;;
+          esac
+
+      - id: gate-run
+        uses: ./
+        continue-on-error: true
+        with:
+          suite: test/fixtures/green/suite.toml
+          root: test/fixtures/green
+          image: ghcr.io/digline/digline:0.0.0-absent
+          run: "true"
+          comment: "false"
+
+      - name: The same with run true, the default, failing at digline run
+        if: always()
+        env:
+          OUTCOME: ${{ steps.gate-run.outcome }}
+          CODE: ${{ steps.gate-run.outputs.exit-code }}
+          HEADLINE: ${{ steps.gate-run.outputs.headline }}
         run: |
           set -euo pipefail
           echo "outcome: ${OUTCOME}; exit-code: '${CODE}'; headline: ${HEADLINE}"
