@@ -118,6 +118,9 @@ outputs:
       The first line of the comparison when digline compared: the same
       sentence the report shows. Otherwise a sentence from this action that
       names the code and where the reason is, never digline's stderr.
+      That first line is digline's own from digline 0.32.1, whose stdout carries
+      nothing else; an image built from an older digline can put a line the
+      suite printed here.
     value: ${{ steps.gate.outputs.headline }}
   run-key:
     description: >-

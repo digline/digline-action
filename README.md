@@ -122,11 +122,14 @@ its own CI asserts this against a red fixture:
 
       - if: always()
         env:
-          # Through `env:`, never interpolated into the script body. The
-          # headline is digline's own fixed vocabulary and counts, so nothing
-          # here is injectable today — but this is the line people copy for
-          # other values, and `${{ }}` inside a `run:` is how a workflow gets
-          # a shell injection.
+          # Through `env:`, never interpolated into the script body. From
+          # digline 0.32.1 the headline is digline's own fixed vocabulary and
+          # counts, so nothing in it is injectable: from that release standard
+          # output carries digline alone, and what your suite prints goes to
+          # stderr. The guarantee is the core's, which this action cannot give
+          # by itself, so an image built from an older digline does not have
+          # it. And this is the line people copy for other values, where
+          # `${{ }}` inside a `run:` is how a workflow gets a shell injection.
           HEADLINE: ${{ steps.gate.outputs.headline }}
           CODE: ${{ steps.gate.outputs.exit-code }}
         run: |
@@ -168,8 +171,13 @@ set and empty, and the empty value means something:
 - `run-key` is empty when `digline run` failed, because there is no run;
 - the `report` file exists and is empty when nothing was compared;
 - `headline` is the comparison's first line when digline compared, and
-  otherwise a sentence from the action naming the code. It never carries
-  digline's stderr, which can quote your suite; that stays in the job log.
+  otherwise a sentence from the action naming the code. What keeps your
+  suite's output out of it is two promises, made by two different pieces, and
+  neither is enough alone. The action promises never to republish digline's
+  stderr, which can quote your suite; that stays in the job log. digline, from
+  0.32.1, guarantees that its standard output carries digline alone, so what
+  your suite prints goes to stderr and not into the first line. An image built
+  from an older digline keeps the first promise and not the second.
 
 `suite`, `root`, `tenant` and `env` are the CLI's own flag names and mean exactly
 what they mean there.
