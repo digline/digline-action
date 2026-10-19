@@ -206,10 +206,12 @@ runs:
         # person reading the log and no one else. (ADR 0043)
         #
         # So a 64's sentence cannot quote digline's reason, and it names the usual
-        # ones instead, in digline's words, with the command that fixes the
-        # commonest: after a digline release, a store at an older schema, which
-        # `digline compare` refuses with nothing on stdout. Which one it was is in
-        # digline's message, in the log.
+        # ones instead, in digline's words. The commonest around a digline release
+        # is a store whose schema does not match the digline reading it, refused
+        # with nothing on stdout, and it goes both ways: a store older than the
+        # digline wants `digline migrate`, one newer wants a newer image, and
+        # `migrate` cannot give that. Only digline's message knows which, so the
+        # sentence names the mismatch and no direction, and points to the log.
         recorded=""
         record() {
           local what=$1 code=$2 kind headline failed=""
@@ -221,13 +223,12 @@ runs:
                 headline="${what} exited ${code}: $(name_of "${code}")."
                 case "${code}" in
                   64)
-                    # Single quotes: a backtick inside double quotes would run.
                     headline="${headline} It is not a verdict on the suite. The usual causes"
-                    headline="${headline}"' are a store written at an older schema, which'
-                    headline="${headline}"' `digline migrate` brings up to date; a suite'
-                    headline="${headline} path that names no file; or a command line digline"
-                    headline="${headline} does not accept. digline's message, which names the"
-                    headline="${headline} cause, is in the job log."
+                    headline="${headline} are a store whose schema does not match the digline"
+                    headline="${headline} reading it; a suite path that names no file; or a"
+                    headline="${headline} command line digline does not accept. digline's"
+                    headline="${headline} message, which names the cause and what to do about"
+                    headline="${headline} it, is in the job log."
                     ;;
                   *)
                     headline="${headline} It is not a verdict on the suite; the reason is in the job log."
