@@ -55,7 +55,7 @@ inputs:
       ghcr.io/digline/digline:<version> plus your suite's dependencies — when
       your suite.py imports an application.
     required: false
-    default: "ghcr.io/digline/digline:0.31.0"
+    default: "ghcr.io/digline/digline:0.32.1"
 
   run:
     description: >-
@@ -118,6 +118,9 @@ outputs:
       The first line of the comparison when digline compared: the same
       sentence the report shows. Otherwise a sentence from this action that
       names the code and where the reason is, never digline's stderr.
+      That first line is digline's own from digline 0.32.1, whose stdout carries
+      nothing else; an image built from an older digline can put a line the
+      suite printed here.
     value: ${{ steps.gate.outputs.headline }}
   run-key:
     description: >-
@@ -201,6 +204,12 @@ runs:
         # is a sentence written here, and never digline's stderr: what a suite or the
         # code it imports prints there can quote the payload, and it reaches the
         # person reading the log and no one else. (ADR 0043)
+        #
+        # So a 64's sentence cannot quote digline's reason, and it names the usual
+        # ones instead, in digline's words, with the command that fixes the
+        # commonest: after a digline release, a store at an older schema, which
+        # `digline compare` refuses with nothing on stdout. Which one it was is in
+        # digline's message, in the log.
         recorded=""
         record() {
           local what=$1 code=$2 kind headline failed=""
@@ -210,7 +219,20 @@ runs:
             verdict|digline)
               if [ -z "${headline}" ]; then
                 headline="${what} exited ${code}: $(name_of "${code}")."
-                headline="${headline} It is not a verdict on the suite; the reason is in the job log."
+                case "${code}" in
+                  64)
+                    # Single quotes: a backtick inside double quotes would run.
+                    headline="${headline} It is not a verdict on the suite. The usual causes"
+                    headline="${headline}"' are a store written at an older schema, which'
+                    headline="${headline}"' `digline migrate` brings up to date; a suite'
+                    headline="${headline} path that names no file; or a command line digline"
+                    headline="${headline} does not accept. digline's message, which names the"
+                    headline="${headline} cause, is in the job log."
+                    ;;
+                  *)
+                    headline="${headline} It is not a verdict on the suite; the reason is in the job log."
+                    ;;
+                esac
               fi
               ;;
             action)

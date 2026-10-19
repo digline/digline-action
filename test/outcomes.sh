@@ -140,9 +140,20 @@ outcome "compare 70" STUB_COMPARE=70
 [ "$key" = 2026-10-08T00-00-00-key ] || fail "run-key is '$key'"
 grep -q '::error title=digline: internal error (exit 70)::' "$log" || fail "annotation"
 ! grep -q 'digline refused the request' "$log" "$body" || fail "a 70 is called a refusal"
+! grep -q 'digline migrate' "$log" "$body" || fail "a 70 is sent to \`digline migrate\`"
 
+# A 64 with nothing on stdout: the headline is this action's sentence, and it
+# has to say what to do. The commonest 64 after a digline release is a store
+# written at an older schema, so the sentence names `digline migrate`, beside
+# the other usual causes, in words written here: digline's own message stays
+# in the job log, and the PAYLOAD check in `outcome` still holds.
 outcome "compare 64" STUB_COMPARE=64
 [ "$code" = 64 ] && [ "$exited" = 64 ] || fail "exit-code '$code', exits $exited, not 64"
+case "$headline" in *'`digline migrate`'*) ;;
+  *) fail "the 64 fallback does not name \`digline migrate\`: $headline" ;; esac
+grep -q '::error title=digline refused the request (exit 64)::.*`digline migrate`' "$log" \
+  || fail "the annotation does not name \`digline migrate\`"
+grep -q '`digline migrate`' "$body" || fail "the comment does not name \`digline migrate\`"
 
 outcome "compare 2" STUB_COMPARE=2 STUB_OUT=$'1 case could not be judged.\n'
 [ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited, not 2"

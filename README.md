@@ -6,7 +6,7 @@ a baseline you reviewed and committed. This is its GitHub Action. It holds this
 branch's output against that baseline and puts the comparison on the pull
 request.
 
-What this README describes holds from `v1.3.0`, and `@v1` points there.
+What this README describes holds from `v1.4.0`, and `@v1` points there.
 
 ```yaml
 name: digline
@@ -122,11 +122,14 @@ its own CI asserts this against a red fixture:
 
       - if: always()
         env:
-          # Through `env:`, never interpolated into the script body. The
-          # headline is digline's own fixed vocabulary and counts, so nothing
-          # here is injectable today — but this is the line people copy for
-          # other values, and `${{ }}` inside a `run:` is how a workflow gets
-          # a shell injection.
+          # Through `env:`, never interpolated into the script body. From
+          # digline 0.32.1 the headline is digline's own fixed vocabulary and
+          # counts, so nothing in it is injectable: from that release standard
+          # output carries digline alone, and what your suite prints goes to
+          # stderr. The guarantee is the core's, which this action cannot give
+          # by itself, so an image built from an older digline does not have
+          # it. And this is the line people copy for other values, where
+          # `${{ }}` inside a `run:` is how a workflow gets a shell injection.
           HEADLINE: ${{ steps.gate.outputs.headline }}
           CODE: ${{ steps.gate.outputs.exit-code }}
         run: |
@@ -150,7 +153,7 @@ right default and needs none of this.
 | `root` | `.` | the directory holding `.digline/` — the CLI's `--root` |
 | `tenant` | | verify the suite's tenant. Verifies, never overrides: a CI job states what it believes it is running and is told when it is wrong |
 | `env` | | verify the suite's environment, the same way |
-| `image` | `ghcr.io/digline/digline:0.31.0` | see below |
+| `image` | `ghcr.io/digline/digline:0.32.1` | see below |
 | `run` | `true` | produce a run before comparing. **This calls your provider and spends money.** `false` compares the run a previous step already produced |
 | `comment` | `true` | post the comparison on the pull request. Needs `pull-requests: write` |
 | `comment-on-success` | `false` | comment when nothing got worse, too |
@@ -168,8 +171,13 @@ set and empty, and the empty value means something:
 - `run-key` is empty when `digline run` failed, because there is no run;
 - the `report` file exists and is empty when nothing was compared;
 - `headline` is the comparison's first line when digline compared, and
-  otherwise a sentence from the action naming the code. It never carries
-  digline's stderr, which can quote your suite; that stays in the job log.
+  otherwise a sentence from the action naming the code. What keeps your
+  suite's output out of it is two promises, made by two different pieces, and
+  neither is enough alone. The action promises never to republish digline's
+  stderr, which can quote your suite; that stays in the job log. digline, from
+  0.32.1, guarantees that its standard output carries digline alone, so what
+  your suite prints goes to stderr and not into the first line. An image built
+  from an older digline keeps the first promise and not the second.
 
 `suite`, `root`, `tenant` and `env` are the CLI's own flag names and mean exactly
 what they mean there.
@@ -225,7 +233,7 @@ from digline.run import Suite
 So derive the image once:
 
 ```dockerfile
-FROM ghcr.io/digline/digline:0.31.0
+FROM ghcr.io/digline/digline:0.32.1
 COPY requirements.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 ```
@@ -236,7 +244,7 @@ and point the action at it:
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
-          image: ghcr.io/acme/digline-with-our-app:0.31.0
+          image: ghcr.io/acme/digline-with-our-app:0.32.1
 ```
 
 The default tag names a **digline** release, not this action's version: `@v1` is
@@ -278,7 +286,7 @@ as root and every later step that touches it fails.
 ```yaml
       - run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
-            ghcr.io/digline/digline:0.31.0 run --suite eval/suite.py
+            ghcr.io/digline/digline:0.32.1 run --suite eval/suite.py
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
