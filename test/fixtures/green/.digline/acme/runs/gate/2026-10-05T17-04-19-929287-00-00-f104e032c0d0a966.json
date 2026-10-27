@@ -72,7 +72,7 @@
       ]
     }
   ],
-  "schema_version": 21,
+  "schema_version": 22,
   "suite": "gate",
   "target_config": {
     "values": {
