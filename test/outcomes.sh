@@ -152,6 +152,16 @@ grep -q '::error title=digline: the run could not be judged::' "$log" || fail "a
 outcome "run judged nothing, compare 0" STUB_RUN=2 STUB_COMPARE=0 STUB_OUT=$'Nothing got worse.\n'
 [ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited; a run that judged nothing passed"
 
+# The same run, read by a compare that says 1: the 1, because a regression is
+# the stronger of the two, as digline's own precedence has it (a moved canary
+# or a check that got worse outranks every cause of 2). This is the one branch
+# the change that compared this run moved: before it, the action exited 2 here.
+outcome "run judged nothing, compare 1" STUB_RUN=2 STUB_COMPARE=1 STUB_OUT=$'1 check got worse.\n'
+[ "$code" = 1 ] && [ "$exited" = 1 ] || fail "exit-code '$code', exits $exited; the regression compare found is not the code"
+[ "$kind" = verdict ] || fail "kind is '$kind', not the verdict compare gave"
+[ "$key" = 2026-10-08T00-00-00-key ] || fail "run-key is '$key' for a run that was written"
+grep -q '::error title=digline: something got worse::' "$log" || fail "annotation"
+
 # A 2 with no key is not that run: it stops where it is, as a 64 or a 70 does.
 outcome "run 2 without a key" STUB_RUN=2 STUB_NO_KEY=1
 [ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited, not 2"
