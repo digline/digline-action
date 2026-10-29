@@ -6,7 +6,7 @@ a baseline you reviewed and committed. This is its GitHub Action. It holds this
 branch's output against that baseline and puts the comparison on the pull
 request.
 
-What this README describes holds from `v1.4.0`, and `@v1` points there.
+What this README describes holds from `v1.8.1`, and `@v1` points there.
 
 ```yaml
 name: digline
@@ -37,7 +37,7 @@ to any older default image. Run `digline migrate` to bring the store up to
 date, or pin the earlier image with the `image` input.
 
 The example uses `@v1`, which moves with fixes. The Marketplace's copy button
-pins the exact tag, `@v1.3.0`. Pinning an exact tag or a commit SHA is a
+pins the exact tag, `@v1.8.1`. Pinning an exact tag or a commit SHA is a
 legitimate supply-chain choice, and it is a choice: a workflow that makes it
 does not receive the fixes.
 
@@ -102,8 +102,11 @@ renderings of one comparison drift apart the day either of them moves.
 `0` and `1` are the verdict; `2`, `64` and `70` are digline's codes that are not
 one. The action does not translate any of them into a pass or a fail of its
 own: it exits with digline's code, whether `digline run` or `digline compare`
-gave it, so a later step can tell `1` from `2` and act on the difference. It
-never puts a `1` where digline gave another code.
+gave it, so a later step can tell `1` from `2` and act on the difference.
+Where both give a verdict or a `2`, it exits with the stronger of the two: a
+regression beats a run that judged nothing, and a run that judged nothing
+beats a clean comparison. So the action never reports green where either of
+the two was not. It never puts a `1` where neither gave one.
 
 A code digline does not have is not digline's, and the action does not report
 it as one. If the image cannot be pulled, docker exits `125` before digline
@@ -176,7 +179,8 @@ set and empty, and the empty value means something:
 
 - `exit-code` is empty only when digline gave no code, because the action
   itself failed;
-- `run-key` is empty when `digline run` failed, because there is no run;
+- `run-key` is empty only where `digline run` printed no key. A run that judged
+  nothing was written and printed its key, and that key is reported;
 - the `report` file exists and is empty when nothing was compared;
 - `headline` is the comparison's first line when digline compared, and
   otherwise a sentence from the action naming the code. What keeps your
