@@ -28,6 +28,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+Upgrading to v1.8.x: the default image is now digline 1.0.0, which reads
+only schema 22. @v1 moved to it from 0.34.0, since v1 had stayed on v1.6.0,
+and a store that image wrote is at schema 21, which 1.0.0 does not read.
+The action then refuses with exit 64 rather than pay for a run it cannot
+compare, and digline's message in the job log names the schema it found and
+what to do. The same applies to any older default image. Run `digline
+migrate` to bring the store up to date, or pin the earlier image with the
+`image` input.
+
 The example uses `@v1`, which moves with fixes. The Marketplace's copy button
 pins the exact tag, `@v1.3.0`. Pinning an exact tag or a commit SHA is a
 legitimate supply-chain choice, and it is a choice: a workflow that makes it
