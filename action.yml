@@ -128,7 +128,8 @@ outputs:
   run-key:
     description: >-
       The key of the run that was compared; `latest` with `run: false`. Empty
-      when `digline run` failed and there is no run.
+      only where `digline run` printed no key. A run that judged nothing was
+      written and printed its key, and that key is reported.
     value: ${{ steps.gate.outputs.run-key }}
   report:
     description: >-
