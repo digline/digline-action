@@ -322,6 +322,14 @@ runs:
           # stdout is the key alone, which is why it can be captured like this.
           key=$(digline run --suite "${INPUT_SUITE}" "${perimeter[@]}")
           ran=$?
+          # A 2 is a run that judged nothing (digline ADR 0049 §3, from 0.34.0):
+          # it is written and its key is on stdout, so it is compared like any
+          # other, and `compare` gives the 2 again with the report saying why.
+          # A 2 with no key is not that run, and stops like the codes below.
+          if [ "${ran}" -eq 2 ] && [ -n "${key}" ]; then
+            judged_nothing=2
+            ran=0
+          fi
           if [ "${ran}" -ne 0 ]; then
             # digline's code, whatever it is: 64 for a suite that could not be
             # loaded, 70 for a failure nobody anticipated. Never 1, which is
@@ -342,6 +350,11 @@ runs:
         digline compare --suite "${INPUT_SUITE}" --run "${key}" \
           "${perimeter[@]}" | tee "${report}"
         compared=${PIPESTATUS[0]}
+        # Never greener than `run` said: a run that judged nothing is a 2, even
+        # if a `compare` read it as a 0.
+        if [ "${compared}" -eq 0 ] && [ -n "${judged_nothing:-}" ]; then
+          compared=${judged_nothing}
+        fi
         record "digline compare" "${compared}"
 
         # This step *reports* the outcome; the `verdict` step at the end of the

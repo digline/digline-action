@@ -40,7 +40,11 @@ for a in "$@"; do
 done
 echo "PAYLOAD-FROM-THE-SUITE" >&2
 case "$command" in
-  run) [ "${STUB_RUN:-0}" = 0 ] && echo "2026-10-08T00-00-00-key"; exit "${STUB_RUN:-0}" ;;
+  run)
+    # A 2 is a run that was written and judged nothing: it prints its key too,
+    # unless the case says it did not.
+    case "${STUB_RUN:-0}" in 0|2) [ -z "${STUB_NO_KEY:-}" ] && echo "2026-10-08T00-00-00-key" ;; esac
+    exit "${STUB_RUN:-0}" ;;
   compare) printf '%s' "${STUB_OUT:-}"; exit "${STUB_COMPARE:-0}" ;;
 esac
 STUB
@@ -133,6 +137,27 @@ outcome "run failed unexpectedly" STUB_RUN=70
 [ "$code" = 70 ] && [ "$exited" = 70 ] || fail "exit-code '$code', exits $exited, not 70"
 grep -q '::error title=digline: internal error (exit 70)::' "$log" || fail "annotation"
 ! grep -q 'digline refused the request' "$log" "$body" || fail "a 70 is called a refusal"
+
+# A run that judged nothing exits 2 and is written, with its key on stdout
+# (digline 0.34.0, ADR 0049 §3). It is compared, so the report says why, and
+# the 2 is what the action exits with (#19).
+outcome "run judged nothing" STUB_RUN=2 STUB_COMPARE=2 STUB_OUT=$'No case could be judged.\n'
+[ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited, not 2"
+[ "$key" = 2026-10-08T00-00-00-key ] || fail "run-key is '$key' for a run that was written"
+[ "$headline" = "No case could be judged." ] || fail "headline is not the report's: $headline"
+grep -q 'No case could be judged.' "$report" || fail "the report is not compare's"
+grep -q '::error title=digline: the run could not be judged::' "$log" || fail "annotation"
+
+# The same run, read by a compare that says 0: still a 2, never greener.
+outcome "run judged nothing, compare 0" STUB_RUN=2 STUB_COMPARE=0 STUB_OUT=$'Nothing got worse.\n'
+[ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited; a run that judged nothing passed"
+
+# A 2 with no key is not that run: it stops where it is, as a 64 or a 70 does.
+outcome "run 2 without a key" STUB_RUN=2 STUB_NO_KEY=1
+[ "$code" = 2 ] && [ "$exited" = 2 ] || fail "exit-code '$code', exits $exited, not 2"
+[ -z "$key" ] || fail "run-key is '$key' for a run that printed none"
+case "$headline" in "digline run exited 2: the run could not be judged."*) ;;
+  *) fail "headline: $headline" ;; esac
 
 # --- 2. compare's non-verdicts, each by its own name ------------------------- #
 outcome "compare 70" STUB_COMPARE=70
