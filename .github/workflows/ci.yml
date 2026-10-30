@@ -338,6 +338,16 @@ jobs:
       # only way to reach a 70, which no real image produces on demand.
       - run: test/outcomes.sh
 
+  stub:
+    name: The fixtures' stub writes a line per call, and none when digline refuses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The digline the tests pin, read from TEST_IMAGE's tag, so the stub is
+      # held against the release the other jobs run inside the image.
+      - run: pip install --quiet "digline==${TEST_IMAGE##*:}"
+      - run: test/stub.sh
+
   image-tag:
     name: The default image tag is real, current, and agreed on
     # This action is on its own version line (v1.x) and digline is not, so `v1`
