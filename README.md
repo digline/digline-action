@@ -6,7 +6,7 @@ a baseline you reviewed and committed. This is its GitHub Action. It holds this
 branch's output against that baseline and puts the comparison on the pull
 request.
 
-What this README describes holds from `v1.8.1`, and `@v1` points there.
+What this README describes holds from `v1.9.0`, and `@v1` points there.
 
 ```yaml
 name: digline
@@ -28,16 +28,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Upgrading to v1.8.x: the default image is now digline 1.0.0, which reads
-only schema 22. @v1 moved to it from 0.34.0, and a store that image wrote
-is at schema 21, which 1.0.0 does not read. The action then refuses with
+Upgrading from before v1.8.0: the default image is now digline 1.0.2,
+which reads only schema 22. Before v1.8.0 @v1 ran 0.34.0, and a store that
+image wrote is at schema 21, which 1.0.2 does not read. The action then refuses with
 exit 64 rather than pay for a run it cannot compare, and digline's message
 in the job log names the schema it found and what to do. The same applies
 to any older default image. Run `digline migrate` to bring the store up to
 date, or pin the earlier image with the `image` input.
 
 The example uses `@v1`, which moves with fixes. The Marketplace's copy button
-pins the exact tag, `@v1.8.1`. Pinning an exact tag or a commit SHA is a
+pins the exact tag, `@v1.9.0`. Pinning an exact tag or a commit SHA is a
 legitimate supply-chain choice, and it is a choice: a workflow that makes it
 does not receive the fixes.
 
@@ -164,7 +164,7 @@ right default and needs none of this.
 | `root` | `.` | the directory holding `.digline/` — the CLI's `--root` |
 | `tenant` | | verify the suite's tenant. Verifies, never overrides: a CI job states what it believes it is running and is told when it is wrong |
 | `env` | | verify the suite's environment, the same way |
-| `image` | `ghcr.io/digline/digline:1.0.0` | see below |
+| `image` | `ghcr.io/digline/digline:1.0.2` | see below |
 | `run` | `true` | produce a run before comparing. **This calls your provider and spends money.** `false` compares the run a previous step already produced |
 | `comment` | `true` | post the comparison on the pull request. Needs `pull-requests: write` |
 | `comment-on-success` | `false` | comment when nothing got worse, too |
@@ -245,7 +245,7 @@ from digline.run import Suite
 So derive the image once:
 
 ```dockerfile
-FROM ghcr.io/digline/digline:1.0.0
+FROM ghcr.io/digline/digline:1.0.2
 COPY requirements.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 ```
@@ -256,7 +256,7 @@ and point the action at it:
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
-          image: ghcr.io/acme/digline-with-our-app:1.0.0
+          image: ghcr.io/acme/digline-with-our-app:1.0.2
 ```
 
 The default tag names a **digline** release, not this action's version: `@v1` is
@@ -298,7 +298,7 @@ as root and every later step that touches it fails.
 ```yaml
       - run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
-            ghcr.io/digline/digline:1.0.0 run --suite eval/suite.py
+            ghcr.io/digline/digline:1.0.2 run --suite eval/suite.py
       - uses: digline/digline-action@v1
         with:
           suite: eval/suite.py
