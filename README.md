@@ -284,7 +284,41 @@ For a provider that is not one of the three, add its variable:
           forward-env: "OPENAI_API_KEY MISTRAL_API_KEY"
 ```
 
+`forward-env` replaces the default list, so it names every variable the run
+still needs, the default ones included.
+
 Nothing is baked into an image and nothing is written to disk.
+
+### On Bedrock
+
+The default image carries `digline-bedrock`, and the default `forward-env`
+already names the AWS variables. So the keys, as repository secrets, and the
+region go on the step:
+
+```yaml
+      - uses: digline/digline-action@v1
+        with:
+          suite: eval/suite.toml
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: eu-central-1
+```
+
+Temporary credentials add `AWS_SESSION_TOKEN`, which the default list also
+names. **A profile does not reach the run**: the container mounts the
+workspace alone, with `HOME=/tmp`, so there is no `~/.aws` inside it, and
+`AWS_PROFILE` would name a file that is not there. The credentials have to be
+the variables themselves. The region is what the price list is chosen by, as
+it is on your machine.
+
+What the action passed for that step, measured on 2026-11-12 with the gate
+step taken from `action.yml` and a stand-in for `docker`, not on a runner: the
+log said `forwarding AWS_ACCESS_KEY_ID`, `forwarding AWS_SECRET_ACCESS_KEY` and
+`forwarding AWS_REGION`, `docker run` got `--env AWS_ACCESS_KEY_ID --env
+AWS_SECRET_ACCESS_KEY --env AWS_REGION` and no value, and neither key appeared
+anywhere in the log. A name that is not set is not forwarded, and one that is
+not in `forward-env`, `AWS_PROFILE` in the default, is not either.
 
 ## Splitting the spend from the gate
 
